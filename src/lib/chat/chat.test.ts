@@ -16,6 +16,7 @@ import { getConfiguredChatModelName, isOpenAIConfigured } from "./model-config";
 import { getRequestRateLimitKey } from "./rate-limit";
 import { isClearlyOutOfScope } from "./scope";
 import { MISSING_DATA, REFUSAL } from "./system-prompt";
+import { buildSdkMultiTurnChatRequestBody } from "./request-body";
 import {
   chatRequestSchema,
   MAX_HISTORY_MESSAGES,
@@ -50,6 +51,21 @@ test("accepts AI SDK v7 DefaultChatTransport metadata fields", () => {
     assert.equal(result.data.messages[0]?.parts[0]?.text, validMessage.parts[0].text);
     assert.equal("id" in result.data, false);
     assert.equal("trigger" in result.data, false);
+  }
+});
+
+test("accepts AI SDK v7 assistant history in multi-turn follow-up requests", () => {
+  const result = chatRequestSchema.safeParse(
+    buildSdkMultiTurnChatRequestBody(
+      "A jak je to s nabíjením?",
+      "follow-up-message",
+    ),
+  );
+
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.messages.length, 3);
+    assert.equal(result.data.messages.at(-1)?.role, "user");
   }
 });
 

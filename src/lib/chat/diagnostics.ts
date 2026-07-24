@@ -32,6 +32,22 @@ function safeErrorDetails(error: unknown) {
     record.cause && typeof record.cause === "object"
       ? (record.cause as Record<string, unknown>)
       : undefined;
+  const issues =
+    Array.isArray(record.issues) && record.issues.length > 0
+      ? record.issues
+          .slice(0, 5)
+          .map((issue) => {
+            if (!issue || typeof issue !== "object") return undefined;
+            const entry = issue as Record<string, unknown>;
+            return {
+              path: Array.isArray(entry.path) ? entry.path.join(".") : undefined,
+              code: typeof entry.code === "string" ? entry.code : undefined,
+              message:
+                typeof entry.message === "string" ? entry.message : undefined,
+            };
+          })
+          .filter(Boolean)
+      : undefined;
 
   return {
     name: typeof record.name === "string" ? record.name : undefined,
@@ -65,6 +81,7 @@ function safeErrorDetails(error: unknown) {
         : nested && typeof nested.request_id === "string"
           ? nested.request_id
           : undefined,
+    validationIssues: issues,
   };
 }
 
@@ -124,6 +141,7 @@ export function logChatError(input: LogChatErrorInput) {
       providerType: details?.type,
       requestId: input.requestId ?? details?.requestId,
       providerMessage: details?.message,
+      validationIssues: details?.validationIssues,
     }),
   );
 }

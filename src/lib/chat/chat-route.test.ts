@@ -4,7 +4,7 @@ import test from "node:test";
 import { POST } from "../../app/api/chat/route";
 import { handleChatRequest } from "./chat-service";
 import { CHAT_ERRORS } from "./errors";
-import { buildSdkChatRequestBody } from "./request-body";
+import { buildSdkChatRequestBody, buildSdkMultiTurnChatRequestBody } from "./request-body";
 import { isClearlyOutOfScope } from "./scope";
 import { REFUSAL } from "./system-prompt";
 import { chatRequestSchema } from "./validation";
@@ -76,6 +76,35 @@ test("POST /api/chat accepts AI SDK v7 transport metadata", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           buildSdkChatRequestBody("umíš něco?", "manual-submit"),
+        ),
+      }),
+    );
+
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.match(body.error, /není nakonfigurovaný/i);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = previous;
+    }
+  }
+});
+
+test("POST /api/chat accepts multi-turn assistant history from AI SDK v7", async () => {
+  const previous = process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const response = await POST(
+      new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          buildSdkMultiTurnChatRequestBody(
+            "A jak je to s nabíjením?",
+            "follow-up",
+          ),
         ),
       }),
     );
