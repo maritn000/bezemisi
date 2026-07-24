@@ -12,6 +12,7 @@ async function main() {
       {
         success: report.success,
         stage: report.stage,
+        classification: report.classification,
         database: report.database,
         counts: report.counts?.stats,
         completedIngestionRuns: report.counts?.completedIngestionRuns,

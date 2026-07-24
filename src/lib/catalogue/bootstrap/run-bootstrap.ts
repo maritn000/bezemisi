@@ -2,6 +2,7 @@ import { countCatalogueStats } from "@/lib/catalogue/repositories/catalogue-repo
 import { runIngestion } from "@/lib/catalogue/ingestion/run-ingestion";
 import { validateCatalogue } from "@/lib/catalogue/validation";
 
+import type { DatabaseTargetClassification } from "./preflight";
 import { isCatalogueBootstrapEnabled } from "./flags";
 import { runDatabaseTargetPreflight } from "./preflight";
 import {
@@ -9,6 +10,7 @@ import {
   inspectCurrentSchema,
   runPendingCatalogueMigrations,
   verifyCatalogueSchema,
+  verifyFoundationSchema,
 } from "./schema";
 import {
   getLatestIngestionRun,
@@ -21,7 +23,8 @@ export type BootstrapStage =
   | "preflight"
   | "schema_inspection"
   | "migration"
-  | "schema_verification"
+  | "foundation_schema_verification"
+  | "catalogue_schema_verification"
   | "ingestion"
   | "validation"
   | "report"
@@ -32,12 +35,14 @@ export type BootstrapReport = {
   enabled: boolean;
   success: boolean;
   stage: BootstrapStage;
+  classification?: DatabaseTargetClassification;
   database?: {
     sourceKey: string;
     host: string;
     database: string;
   };
   schemaBefore?: Awaited<ReturnType<typeof inspectCurrentSchema>>;
+  foundationSchemaAfter?: Awaited<ReturnType<typeof verifyFoundationSchema>>;
   schemaAfter?: Awaited<ReturnType<typeof verifyCatalogueSchema>>;
   ingestion?: Awaited<ReturnType<typeof runIngestion>>;
   validation?: Awaited<ReturnType<typeof validateCatalogue>>;
@@ -51,6 +56,7 @@ export type BootstrapDependencies = {
   preflight: typeof runDatabaseTargetPreflight;
   inspectSchema: typeof inspectCurrentSchema;
   migrate: typeof runPendingCatalogueMigrations;
+  verifyFoundation: typeof verifyFoundationSchema;
   verifySchema: typeof verifyCatalogueSchema;
   ingest: (options?: { dryRun?: boolean }) => Promise<Awaited<ReturnType<typeof runIngestion>>>;
   validate: typeof validateCatalogue;
@@ -66,6 +72,7 @@ const defaultDependencies: BootstrapDependencies = {
   preflight: runDatabaseTargetPreflight,
   inspectSchema: inspectCurrentSchema,
   migrate: runPendingCatalogueMigrations,
+  verifyFoundation: verifyFoundationSchema,
   verifySchema: verifyCatalogueSchema,
   ingest: runIngestion,
   validate: validateCatalogue,
@@ -104,17 +111,24 @@ export async function runCatalogueBootstrap(
 
   const preflight = await deps.preflight();
   if (!preflight.ok) {
+    report.classification = preflight.classification;
     report.errors.push(preflight.reason);
     return report;
   }
 
+  report.classification = preflight.classification;
   report.database = {
     sourceKey: preflight.sourceKey,
     host: preflight.redacted.host,
     database: preflight.redacted.database,
   };
 
-  safeLog("Catalogue bootstrap target confirmed", report.database);
+  safeLog("Catalogue bootstrap database classification", {
+    classification: preflight.classification,
+    host: preflight.redacted.host,
+    database: preflight.redacted.database,
+    sourceKey: preflight.sourceKey,
+  });
 
   report.stage = "schema_inspection";
   safeLog("Catalogue bootstrap stage: current schema inspection");
@@ -122,13 +136,19 @@ export async function runCatalogueBootstrap(
   const schemaBefore = await deps.inspectSchema(preflight.resolved.url);
   report.schemaBefore = schemaBefore;
   safeLog("Catalogue bootstrap schema inspection", {
+    classification: preflight.classification,
+    foundationTablesPresent: schemaBefore.foundationTablesPresent,
     catalogueTablesPresent: schemaBefore.catalogueTablesPresent,
     appliedMigrations: schemaBefore.appliedMigrations.length,
+    pendingMigrationTags: schemaBefore.pendingMigrationTags,
     migrationTag: formatMigrationTagForLog(),
   });
 
   report.stage = "migration";
-  safeLog("Catalogue bootstrap stage: catalogue migration");
+  safeLog("Catalogue bootstrap stage: pending migrations", {
+    pendingMigrationTags: schemaBefore.pendingMigrationTags,
+    appliedMigrations: schemaBefore.appliedMigrations.length,
+  });
 
   try {
     await deps.migrate(preflight.resolved.url);
@@ -141,8 +161,26 @@ export async function runCatalogueBootstrap(
     return report;
   }
 
-  report.stage = "schema_verification";
-  safeLog("Catalogue bootstrap stage: schema verification");
+  report.stage = "foundation_schema_verification";
+  safeLog("Catalogue bootstrap stage: foundation schema verification");
+
+  const foundationSchemaAfter = await deps.verifyFoundation(preflight.resolved.url);
+  report.foundationSchemaAfter = foundationSchemaAfter;
+
+  if (!foundationSchemaAfter.ok) {
+    report.errors.push(
+      `Foundation schema verification failed. Missing tables: ${foundationSchemaAfter.missingTables.join(", ")}`,
+    );
+    return report;
+  }
+
+  safeLog("Catalogue bootstrap foundation schema verification", {
+    ok: true,
+    tables: foundationSchemaAfter.missingTables.length === 0,
+  });
+
+  report.stage = "catalogue_schema_verification";
+  safeLog("Catalogue bootstrap stage: catalogue schema verification");
 
   const schemaAfter = await deps.verifySchema(preflight.resolved.url);
   report.schemaAfter = schemaAfter;
@@ -153,6 +191,10 @@ export async function runCatalogueBootstrap(
     );
     return report;
   }
+
+  safeLog("Catalogue bootstrap catalogue schema verification", {
+    ok: true,
+  });
 
   report.stage = "ingestion";
   safeLog("Catalogue bootstrap stage: catalogue ingestion");

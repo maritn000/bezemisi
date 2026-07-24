@@ -17,6 +17,24 @@ export const CATALOGUE_TABLES = [
   "catalogue_ingestion_issues",
 ] as const;
 
+export const ALL_BEZEMISI_TABLES = [
+  ...FOUNDATION_TABLES,
+  ...CATALOGUE_TABLES,
+] as const;
+
+export const POSTGRES_SYSTEM_SCHEMAS = [
+  "information_schema",
+  "pg_catalog",
+  "pg_toast",
+] as const;
+
+export const IGNORED_APPLICATION_SCHEMAS = ["drizzle"] as const;
+
+export const EXPECTED_MIGRATION_TAGS = [
+  "0000_redundant_wild_pack",
+  "0001_woozy_expediter",
+] as const;
+
 export const BLOCKED_DATABASE_IDENTIFIERS = [
   "mysecondapp",
   "my_second_app",

@@ -8,10 +8,13 @@ import { createDb } from "@/db/create-client";
 import {
   CATALOGUE_MIGRATION_TAG,
   CATALOGUE_TABLES,
+  EXPECTED_MIGRATION_TAGS,
+  FOUNDATION_TABLES,
 } from "./constants";
 
 export type SchemaInspection = {
   existingTables: string[];
+  foundationTablesPresent: boolean;
   catalogueTablesPresent: boolean;
   appliedMigrations: Array<{
     id: number;
@@ -19,6 +22,7 @@ export type SchemaInspection = {
     createdAt: string | null;
   }>;
   catalogueMigrationApplied: boolean;
+  pendingMigrationTags: string[];
 };
 
 export async function inspectCurrentSchema(
@@ -34,6 +38,9 @@ export async function inspectCurrentSchema(
   `);
 
   const existingTables = tablesResult.rows.map((row) => row.table_name);
+  const foundationTablesPresent = FOUNDATION_TABLES.every((table) =>
+    existingTables.includes(table),
+  );
   const catalogueTablesPresent = CATALOGUE_TABLES.every((table) =>
     existingTables.includes(table),
   );
@@ -59,13 +66,18 @@ export async function inspectCurrentSchema(
         : row.created_at,
   }));
 
-  const catalogueMigrationApplied = appliedMigrations.length >= 2;
+  const catalogueMigrationApplied = appliedMigrations.length >= EXPECTED_MIGRATION_TAGS.length;
+  const pendingMigrationTags = EXPECTED_MIGRATION_TAGS.slice(
+    appliedMigrations.length,
+  );
 
   return {
     existingTables,
+    foundationTablesPresent,
     catalogueTablesPresent,
     appliedMigrations,
     catalogueMigrationApplied,
+    pendingMigrationTags: [...pendingMigrationTags],
   };
 }
 
@@ -76,6 +88,21 @@ export async function runPendingCatalogueMigrations(
   await migrate(db, {
     migrationsFolder: path.join(process.cwd(), "drizzle"),
   });
+}
+
+export async function verifyFoundationSchema(databaseUrl: string): Promise<{
+  ok: boolean;
+  missingTables: string[];
+}> {
+  const inspection = await inspectCurrentSchema(databaseUrl);
+  const missingTables = FOUNDATION_TABLES.filter(
+    (table) => !inspection.existingTables.includes(table),
+  );
+
+  return {
+    ok: missingTables.length === 0,
+    missingTables: [...missingTables],
+  };
 }
 
 export async function verifyCatalogueSchema(databaseUrl: string): Promise<{
@@ -89,7 +116,7 @@ export async function verifyCatalogueSchema(databaseUrl: string): Promise<{
 
   return {
     ok: missingTables.length === 0,
-    missingTables,
+    missingTables: [...missingTables],
   };
 }
 
