@@ -2,7 +2,7 @@
 
 Nezávislý průvodce světem elektromobility. Projekt připravuje AI asistenta, který pomůže s orientací v elektromobilech, nabíjení, provozních nákladech a každodenním používání.
 
-**Aktuální fáze:** databázový základ (Neon PostgreSQL + Drizzle ORM)
+**Aktuální fáze:** produktový web a bezpečný základ AI chatu; ověřený katalog vozidel zatím není připojen
 
 ## Architektura
 
@@ -11,6 +11,7 @@ Nezávislý průvodce světem elektromobility. Projekt připravuje AI asistenta,
 - **Neon PostgreSQL** – serverless databáze připojená přes Vercel Marketplace
 - **Drizzle ORM** – schéma, migrace a typově bezpečný přístup k databázi
 - **Zod** – validace serverového prostředí
+- **Vercel AI SDK + OpenAI provider** – streamovaný chat na serveru
 
 Aplikace používá Neon HTTP serverless driver (`@neondatabase/serverless`) pro připojení k databázi. Veškerý přístup k databázi je pouze na serveru (`server-only`).
 
@@ -28,6 +29,14 @@ npx vercel env pull .env.local
 ```
 
 Šablona bez tajných hodnot je v souboru `.env.example`.
+
+Pro AI chat je potřeba serverová proměnná `OPENAI_API_KEY`. Volitelný
+`OPENAI_CHAT_MODEL` mění model pouze na serveru. Nepoužívejte variantu
+`NEXT_PUBLIC_OPENAI_API_KEY`.
+
+Persistenci chatu lze zapnout pouze explicitně pomocí
+`CHAT_PERSISTENCE_ENABLED=true`, a to až po ověření migrací a cílové databázové
+větve. Bez této kombinace chat bezpečně funguje bez zápisu.
 
 ### Development, Preview a Production
 
@@ -84,14 +93,36 @@ Migrace jsou uloženy ve složce `drizzle/`. Před aplikací vždy zkontrolujte 
 
 ```json
 {
-  "status": "ok",
   "application": "ok",
   "database": "connected",
+  "openai": "configured",
   "timestamp": "2026-07-24T12:00:00.000Z"
 }
 ```
 
 Endpoint provádí pouze **read-only** dotaz (`SELECT 1`). Nezapisuje záznamy do `app_health_checks` při každém požadavku.
+Stav OpenAI pouze říká, zda je klíč nastavený; klíč neověřuje voláním a nikdy
+jej nevrací.
+
+## Web a AI chat
+
+Veřejné prezentační trasy reprodukují vizuální jazyk Bez emisí pomocí původního
+kódu, neutrálního textu a lokální ilustrační grafiky. Produkční obrázky nejsou
+hotlinkovány. Podrobný audit je v `docs/reference-site-audit.md`.
+
+Chat na `/chat`:
+
+- přijímá pouze validované uživatelské a asistentské textové zprávy,
+- omezuje délku zprávy i historii,
+- nepřijímá systémový prompt ani model z klienta,
+- streamuje odpověď přes AI SDK,
+- nepoužívá webové hledání ani nástroje,
+- má oddělené adaptéry pro budoucí data o vozech a obchodních podmínkách,
+- při chybějících datech nesmí konkrétní hodnoty odhadovat.
+
+Současný rate limiter je pouze procesní vývojová ochrana. V serverless provozu
+není globální ani trvalý; před produkčním provozem jej nahraďte distribuovaným
+úložištěm a zachovejte rozhraní `ChatRateLimiter`.
 
 Jednorázový test zápisu a čtení spusťte skriptem:
 

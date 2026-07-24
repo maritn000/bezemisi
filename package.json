@@ -8,13 +8,17 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:verify": "tsx -r tsconfig-paths/register scripts/verify-db.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.20",
+    "@ai-sdk/react": "^4.0.40",
     "@neondatabase/serverless": "^1.1.0",
+    "ai": "^7.0.37",
     "drizzle-orm": "^0.45.2",
     "next": "16.2.11",
     "react": "19.2.4",
@@ -35,5 +39,9 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.23.1",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "8.5.23",
+    "sharp": "0.35.3"
   }
 }
