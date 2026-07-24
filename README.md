@@ -2,7 +2,7 @@
 
 Nezávislý průvodce světem elektromobility. Projekt připravuje AI asistenta, který pomůže s orientací v elektromobilech, nabíjení, provozních nákladech a každodenním používání.
 
-**Aktuální fáze:** produktový web a bezpečný základ AI chatu; ověřený katalog vozidel zatím není připojen
+**Aktuální fáze:** produktový web, bezpečný AI chat a ověřený relační katalog vozidel (ingest + retrieval)
 
 ## Architektura
 
@@ -64,6 +64,10 @@ Neon integrace typicky vytváří **oddělené databázové větve** pro jednotl
 | `sources` | Budoucí znalostní zdroje pro chatbot |
 | `conversations` | Budoucí konverzace chatbotu |
 | `messages` | Budoucí zprávy v konverzacích |
+| `vehicle_*` | Ověřený katalog značek, modelů, variant, specifikací a nabídek |
+| `commercial_conditions` | Ověřené obchodní podmínky |
+| `source_pages` | Provenience faktů a nabídek |
+| `catalogue_ingestion_*` | Audit importů katalogu |
 
 ## Migrace
 
@@ -118,7 +122,7 @@ Chat na `/chat`:
 - nepřijímá systémový prompt ani model z klienta,
 - streamuje odpověď přes AI SDK,
 - nepoužívá webové hledání ani nástroje,
-- má oddělené adaptéry pro budoucí data o vozech a obchodních podmínkách,
+- má oddělené adaptéry pro data o vozech a obchodních podmínkách napojené na relační katalog,
 - při chybějících datech nesmí konkrétní hodnoty odhadovat.
 
 Současný rate limiter je **development fallback** v paměti procesu
@@ -134,6 +138,24 @@ Jednorázový test zápisu a čtení spusťte skriptem:
 ```bash
 npm run db:verify
 ```
+
+## Katalog vozidel
+
+```bash
+npm run catalogue:discover
+npm run catalogue:ingest
+npm run catalogue:validate
+npm run catalogue:report
+```
+
+Dokumentace:
+
+- `docs/catalogue-architecture.md`
+- `docs/catalogue-source-audit.md`
+- `docs/catalogue-validation-report.md`
+- `docs/catalogue-runbook.md`
+
+Chat na `/chat` používá pouze verified data z katalogu. Konfliktní nebo chybějící hodnoty se neodhadují.
 
 ## Lokální instalace
 
