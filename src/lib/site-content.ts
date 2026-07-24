@@ -6,6 +6,7 @@ export const navigation = [
   { href: "/akcni-nabidky", label: "Akční nabídky" },
   { href: "/blog", label: "Blog" },
   { href: "/o-nas", label: "O nás" },
+  { href: "/chat", label: "AI poradce" },
 ] as const;
 
 export const exampleQuestions = [
@@ -16,10 +17,36 @@ export const exampleQuestions = [
 ] as const;
 
 export const presentedVehicles = [
-  { name: "Hyundai INSTER", category: "Městský elektromobil" },
-  { name: "Volvo EX30", category: "Kompaktní SUV" },
-  { name: "Kia EV3", category: "Rodinný crossover" },
+  {
+    name: "Hyundai INSTER",
+    category: "Městský elektromobil",
+    brand: "hyundai",
+    model: "inster",
+    href: "/elektromobily/hyundai/inster",
+  },
+  {
+    name: "Volvo EX30",
+    category: "Kompaktní SUV",
+    brand: "volvo",
+    model: "ex30",
+    href: "/elektromobily/volvo/ex30",
+  },
+  {
+    name: "Kia EV3",
+    category: "Rodinný crossover",
+    brand: "kia",
+    model: "ev3",
+    href: "/elektromobily/kia/ev3",
+  },
 ] as const;
+
+export type PresentedVehicle = (typeof presentedVehicles)[number];
+
+export function findPresentedVehicle(brand: string, model: string) {
+  return presentedVehicles.find(
+    (vehicle) => vehicle.brand === brand && vehicle.model === model,
+  );
+}
 
 export type EditorialPage = {
   eyebrow: string;

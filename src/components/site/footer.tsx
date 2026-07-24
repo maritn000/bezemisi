@@ -2,13 +2,15 @@ import Link from "next/link";
 
 import { navigation } from "@/lib/site-content";
 
+import { Container } from "./container";
 import { Logo } from "./logo";
+import { PrototypeNewsletterForm } from "./prototype-form";
 
 export function Footer() {
   return (
     <footer>
       <section className="border-t border-purple-950/10 bg-white">
-        <div className="site-container grid gap-6 py-12 md:grid-cols-[1fr_auto] md:items-center">
+        <Container className="grid gap-6 py-12 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <h2 className="text-2xl font-medium text-purple-950">
               Praktické novinky o elektromobilitě
@@ -18,14 +20,12 @@ export function Footer() {
               neodesílá ani neukládá.
             </p>
           </div>
-          <span className="rounded-xl border border-purple-950/15 bg-purple-50 px-5 py-3 text-sm font-semibold text-purple-950">
-            Odběr bude dostupný později
-          </span>
-        </div>
+          <PrototypeNewsletterForm />
+        </Container>
       </section>
 
       <div className="bg-purple-950 text-white">
-        <div className="site-container grid gap-10 py-14 md:grid-cols-[1.2fr_2fr]">
+        <Container className="grid gap-10 py-14 md:grid-cols-[1.2fr_2fr]">
           <div>
             <Logo light />
             <p className="mt-5 max-w-sm text-sm leading-6 text-white/70">
@@ -53,16 +53,16 @@ export function Footer() {
               Kontakt
             </Link>
           </nav>
-        </div>
+        </Container>
       </div>
       <div className="bg-[#15043d] text-white/60">
-        <div className="site-container flex flex-col gap-2 py-5 text-xs sm:flex-row sm:items-center sm:justify-between">
+        <Container className="flex flex-col gap-2 py-5 text-xs sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Bez emisí. Produktový prototyp.</p>
           <p>
             Obsah není závaznou nabídkou. Ceny a dostupnost musí potvrdit
             prodejce.
           </p>
-        </div>
+        </Container>
       </div>
     </footer>
   );

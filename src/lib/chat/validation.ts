@@ -22,6 +22,7 @@ const messageSchema = z
 export const chatRequestSchema = z
   .object({
     messages: z.array(messageSchema).min(1).max(MAX_HISTORY_MESSAGES),
+    conversationId: z.string().uuid().optional(),
   })
   .strict()
   .refine(

@@ -1,8 +1,9 @@
+import type { EditorialPage as EditorialPageContent } from "@/lib/site-content";
+
+import { Container } from "./container";
 import { CtaSection } from "./cta-section";
 import { Hero } from "./hero";
 import { SectionHeading } from "./section-heading";
-
-import type { EditorialPage as EditorialPageContent } from "@/lib/site-content";
 
 export function EditorialPage({ page }: { page: EditorialPageContent }) {
   return (
@@ -14,7 +15,7 @@ export function EditorialPage({ page }: { page: EditorialPageContent }) {
         secondary={{ href: "/kontakt", label: "Osobní kontakt" }}
       />
       <section className="site-section bg-white">
-        <div className="site-container">
+        <Container>
           <SectionHeading title={page.introTitle} description={page.intro} />
           <div className="mt-10 grid gap-5 md:grid-cols-3">
             {page.cards.map((card, index) => (
@@ -32,7 +33,7 @@ export function EditorialPage({ page }: { page: EditorialPageContent }) {
               </article>
             ))}
           </div>
-        </div>
+        </Container>
       </section>
       <CtaSection />
     </>

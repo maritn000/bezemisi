@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { navigation } from "@/lib/site-content";
 
 export function MobileNavigation() {
   const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
@@ -15,13 +17,27 @@ export function MobileNavigation() {
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    closeButtonRef.current?.focus();
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   return (
     <div className="lg:hidden">
       <button
         type="button"
         className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 font-semibold text-purple-950 hover:bg-purple-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
         aria-expanded={open}
-        aria-controls="mobile-menu"
+        aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
       >
         <span>{open ? "Zavřít" : "Menu"}</span>
@@ -32,11 +48,27 @@ export function MobileNavigation() {
 
       {open && (
         <div className="fixed inset-0 top-[72px] z-40 bg-purple-950/30">
+          <button
+            type="button"
+            aria-label="Zavřít menu"
+            className="absolute inset-0"
+            onClick={() => setOpen(false)}
+          />
           <nav
-            id="mobile-menu"
+            id={menuId}
             aria-label="Mobilní navigace"
-            className="ml-auto flex h-full w-[min(84vw,22rem)] flex-col gap-1 overflow-y-auto bg-purple-950 p-6 text-white shadow-2xl"
+            aria-modal="true"
+            role="dialog"
+            className="relative ml-auto flex h-full w-[min(84vw,22rem)] flex-col gap-1 overflow-y-auto bg-purple-950 p-6 text-white shadow-2xl"
           >
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="mb-2 self-end rounded-lg px-3 py-2 text-sm font-semibold hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-400"
+              onClick={() => setOpen(false)}
+            >
+              Zavřít
+            </button>
             {navigation.map((item) => (
               <Link
                 key={item.href}

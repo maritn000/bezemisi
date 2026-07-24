@@ -1,29 +1,50 @@
 # Audit veřejného webu Bez emisí
 
-Audit proběhl 24. 7. 2026 pouze nad veřejně dostupnými stránkami `bezemisi.cz`. Nebyly odeslány formuláře, otevřena administrace ani použita neveřejná API.
+Audit proběhl 24. 7. 2026 pouze nad veřejně dostupnými stránkami `bezemisi.cz`.
+Nebyly odeslány formuláře, otevřena administrace ani použita neveřejná API.
 
-## Prohlédnuté stránky
+## Prohlédnuté URL
 
-- `/` – úvod, nabídka služeb, oblíbené modely, články, značky a kontakt
-- `/elektromobily` – katalog modelů a rozcestník podle značek a způsobu využití
-- `/elektromobily/bmw`, `/opel`, `/peugeot`, `/volvo`, `/skoda`, `/kia`, `/hyundai`, `/renault` – dostupné značkové šablony
-- `/nabijeni` – domácí a veřejné nabíjení
-- `/operativni-leasing` – vysvětlení služby a nabídkové karty
-- `/akcni-nabidky` – přehled kampaní
-- `/jak-vybrat` – veřejný první krok průvodce výběrem
-- `/blog` – přehled článků
-- `/o-nas` – představení firmy a kontaktních osob
-- `/kontakt` – kontaktní formulář
-- `/mapa-stranek` – veřejná mapa webu
-- `auto.bezemisi.cz` – samostatný veřejný inzertní portál; pouze vizuálně ověřený, bez přihlášení
+- `https://www.bezemisi.cz/`
+- `https://www.bezemisi.cz/elektromobily`
+- `https://www.bezemisi.cz/elektromobily/hyundai/inster`
+- `https://www.bezemisi.cz/elektromobily/volvo/ex30`
+- `https://www.bezemisi.cz/elektromobily/kia/ev3`
+- `https://www.bezemisi.cz/elektromobily/bmw` (a další značkové rozcestníky)
+- `https://www.bezemisi.cz/akcni-nabidky`
+- `https://www.bezemisi.cz/jak-vybrat`
+- `https://www.bezemisi.cz/nabijeni`
+- `https://www.bezemisi.cz/operativni-leasing`
+- `https://www.bezemisi.cz/blog`
+- `https://www.bezemisi.cz/o-nas`
+- `https://www.bezemisi.cz/kontakt`
+- `https://www.bezemisi.cz/mapa-stranek`
+- `auto.bezemisi.cz` — pouze vizuálně ověřený veřejný inzertní portál, bez přihlášení
 
-## Informační a navigační struktura
+## Navigační struktura
 
-Desktopová navigace obsahuje Elektromobily, Nabídku vozidel (externí portál), Operativní leasing, Akční nabídky, Jak vybrat, Blog, O nás a výrazný Kontakt. Hlavička je na začátku průhledná, při posunu získá bílé pozadí. Mobilní navigace se pod přibližně 720 px mění na vysouvací tmavý panel.
+Desktopová navigace obsahuje Elektromobily, Operativní leasing, Akční nabídky,
+Jak vybrat, Blog, O nás a výrazný Kontakt. Hlavička je na začátku průhledná,
+při posunu získá bílé pozadí. Mobilní navigace se pod přibližně 720 px mění na
+vysouvací tmavý panel.
 
-Domovská stránka vede návštěvníka přes hero, tři hlavní cesty, argumenty služby, nabídku vozidel, edukaci, populární modely, články, značky, představení týmu a kontaktní formulář. Prodejní stránky opakují lead formulář a newsletter před patičkou.
+## Objevená struktura tras
 
-## Opakovaně použitelné komponenty
+| Vzor | Poznámka |
+|------|----------|
+| `/` | Homepage |
+| `/elektromobily` | Katalog / rozcestník |
+| `/elektromobily/{znacka}` | Značková stránka |
+| `/elektromobily/{znacka}/{model}` | Detail modelu |
+| `/akcni-nabidky` | Kampaně |
+| `/jak-vybrat` | Průvodce výběrem |
+| `/nabijeni` | Nabíjení |
+| `/operativni-leasing` | Leasing |
+| `/blog`, `/blog/{slug}` | Editorial |
+| `/o-nas`, `/kontakt` | Firma a kontakt |
+| `/mapa-stranek` | Sitemap |
+
+## Opakovaně použitelné vizuální vzory
 
 - fixní hlavička, desktopová a mobilní navigace
 - textové logo a výrazná kontaktní CTA
@@ -32,45 +53,67 @@ Domovská stránka vede návštěvníka přes hero, tři hlavní cesty, argument
 - nadpis sekce s krátkým úvodem
 - modelová karta s obrázkem, názvem, cenou, dojezdem a CTA
 - obsahová karta pro článek, službu nebo scénář použití
-- střídavé obrazové a textové bloky
 - tmavě fialový konverzní pás
 - newsletter, vícesloupcová patička a tmavší právní lišta
 
-## Vizuální systém
+## Typografie
+
+- viditelným písmem je převážně Outfit
+- nadpisy mají lehčí řez a velké rozměry
+- desktopové H1 dosahuje přibližně 70 px, mobilní přibližně 50 px
+
+## Barvy
 
 - hlavní tmavě fialová přibližně `#1f0556`, tmavší `#15043d`
 - elektrická modrá přibližně `#0043ff`, hover přibližně `#0037c4`
 - jasná zelená přibližně `#00ff7f`
 - světlá levandulová `#f0f0ff`, téměř bílá `#fbfbff`
-- viditelným písmem je převážně Outfit; nadpisy mají lehčí řez a velké rozměry
-- desktopové H1 dosahuje přibližně 70 px, mobilní přibližně 50 px
-- obsah má maximální šířku přibližně 1360 px
-- tlačítka mají výšku okolo 53 px, silný text a poloměr přibližně 10 px
-- karty a formulářové panely používají poloměr okolo 20 px a jen jemné stíny
-- sekce střídají bílou, světlou levandulovou a tmavě fialovou plochu
 
 ## Responzivní chování
 
-Na širokých obrazovkách jsou hero bloky dělené na text a obraz, modely ve třech sloupcích a patička ve skupinách. Na telefonu se vše skládá do jednoho sloupce, horizontální odsazení je přibližně 24 px, nadpisy se zmenšují a navigace se otevírá jako panel. Modelové obrázky drží poměr stran 16:9. Ovládací prvky zůstávají dostatečně vysoké pro dotyk.
+Na širokých obrazovkách jsou hero bloky dělené na text a obraz, modely ve třech
+sloupcích a patička ve skupinách. Na telefonu se vše skládá do jednoho sloupce,
+horizontální odsazení je přibližně 24 px, nadpisy se zmenšují a navigace se
+otevírá jako panel. Modelové obrázky drží poměr stran 16:9.
 
-## Vzory obsahu o vozidlech
+## Struktura karty vozidla
 
-Katalogová karta obvykle uvádí název, krátké zařazení, „Cena od“, informaci o DPH, „Dojezd až“, někdy provozní náklad a odkaz na detail. Značkové stránky kombinují hero, historii značky, fakta, modely, tři kroky služby a kontaktní formulář. Referenční web však obsahuje i rozpory mezi cenami, zástupné hodnoty `XXX`, chybné značkové nadpisy a neúplné modelové bloky. Tyto údaje proto prototyp nepřebírá jako ověřená fakta.
+Obvykle: název, krátké zařazení, „Cena od“, informace o DPH, „Dojezd až“,
+někdy provozní náklad a odkaz na detail. Referenční web obsahuje i rozpory mezi
+cenami a zástupné hodnoty — tyto údaje prototyp nepřebírá jako ověřená fakta.
 
-## Aktuální CTA a tón
+## Struktura detailu vozidla
 
-Text je přátelský, používá otázky a kratší výzvy jako „Chci“, „Objevte“, „Více o modelu“ a „Kontaktujte nás“. Modrá obvykle vede k průzkumu obsahu, zelená ke kontaktu nebo hlavní konverzi. Nový prototyp tento princip zachovává a jako hlavní novou akci používá „Zeptat se AI poradce“.
+Hero s modelem, parametry, CTA ke kontaktu / nabídce a vysvětlující obsah.
+Prototyp používá stejný URL vzor `/elektromobily/{brand}/{model}` pro tři
+prezentované modely, ale bez vymyšlených čísel.
+
+## Nákupní / konverzní obsah
+
+Text je přátelský, používá otázky a kratší výzvy. Modrá obvykle vede k průzkumu
+obsahu, zelená ke kontaktu. Nový prototyp jako hlavní akci používá
+„Zeptat se AI poradce“.
 
 ## Aktiva a obsah, které nebyly převzaty
 
-Do aplikace nejsou hotlinkovány ani kopírovány produkční fotografie vozů, portréty týmu, výrobní logotypy, ilustrace, článkové fotografie, analytika, formuláře, cookies, CMS skripty ani jejich identifikátory. Práva ke konkrétním produkčním souborům nebyla v repozitáři doložena. Prototyp proto používá vlastní lokální abstraktní SVG ilustrace a neutrální český text. Externí inzertní portál je pouze odkaz.
+- produkční fotografie vozů
+- portréty týmu
+- výrobní logotypy třetích stran
+- článkové fotografie
+- analytika, tracking pixely, cookies skripty
+- CMS implementace a formulářové endpointy
 
-## Rozdíly implementace
+Lokálně stažen pouze vlastní favicon Bez emisí do `public/brand/`. Hero a karty
+používají lokální SVG placeholder `public/ev-placeholder.svg`.
 
-- Jde o čistou moderní reprodukci vizuálního jazyka, ne kopii CMS šablony.
-- Katalog zatím neuvádí ceny, dojezdy ani dostupnost, protože není připojena ověřená znalostní báze.
-- Kontaktní, newsletterové a nákupní akce jsou zřetelně označené jako neaktivní prototyp.
-- Blog používá krátké původní anotace, nikoli zkopírované články.
-- Značkové detailní trasy nejsou v této fázi naplněny redakční historií ani neověřenými fakty.
-- Novým hlavním prvkem je bezpečně omezený AI chat na samostatné stránce.
-- Mobilní menu je překryvný panel; nekopíruje přesný produkční posun celé stránky.
+## Rozdíly implementace oproti referenci
+
+- moderní reprodukce vizuálního jazyka, ne kopie CMS šablony
+- katalog neuvádí ceny, dojezdy ani dostupnost (katalog není připojen)
+- kontaktní a newsletterové formuláře jsou vizuální a neaktivní
+- blog používá krátké původní anotace
+- značkové redakční historie nejsou naplněny
+- sticky bílá hlavička místo transparentní→bílé při scrollu
+- hero používá lokální ilustraci místo full-bleed produkční fotografie
+- mobilní menu je překryvný panel
+- novým prvkem je AI chat na `/chat`
