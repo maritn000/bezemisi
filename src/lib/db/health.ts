@@ -7,9 +7,9 @@ export type DatabaseHealthResult = {
 };
 
 export async function checkDatabaseHealth(): Promise<DatabaseHealthResult> {
-  const db = createDb();
-
   try {
+    const db = createDb();
+
     await db.execute(sql`select 1 as health_check`);
 
     return { status: "connected" };
