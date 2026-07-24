@@ -94,6 +94,12 @@ function logStreamError(error: unknown) {
 
 export async function handleChatRequest(parsedBody: ChatRequest) {
   const modelName = getConfiguredChatModelName();
+  const latestMessage = parsedBody.messages.at(-1)!;
+  const query = latestMessage.parts.map((part) => part.text).join("\n");
+
+  if (isClearlyOutOfScope(query)) {
+    return staticAssistantResponse(REFUSAL);
+  }
 
   if (!isOpenAIConfigured()) {
     logChatError({
@@ -107,13 +113,6 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
       { error: CHAT_ERRORS.missingOpenAI },
       { status: 503 },
     );
-  }
-
-  const latestMessage = parsedBody.messages.at(-1)!;
-  const query = latestMessage.parts.map((part) => part.text).join("\n");
-
-  if (isClearlyOutOfScope(query)) {
-    return staticAssistantResponse(REFUSAL);
   }
 
   const [vehicleContext, commercialContext] = await Promise.all([
