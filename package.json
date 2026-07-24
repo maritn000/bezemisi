@@ -16,6 +16,7 @@
     "db:studio": "drizzle-kit studio",
     "db:verify": "tsx -r tsconfig-paths/register scripts/verify-db.ts",
     "db:inspect": "tsx -r tsconfig-paths/register scripts/inspect-db.ts",
+    "db:prepare-bootstrap": "tsx --require ./scripts/mock-server-only.cjs -r tsconfig-paths/register scripts/prepare-catalogue-bootstrap.ts",
     "catalogue:discover": "tsx -r tsconfig-paths/register scripts/catalogue/discover.ts",
     "catalogue:ingest": "tsx -r tsconfig-paths/register scripts/catalogue/ingest.ts",
     "catalogue:validate": "tsx -r tsconfig-paths/register scripts/catalogue/validate.ts",
