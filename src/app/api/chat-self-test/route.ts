@@ -93,7 +93,7 @@ async function runSdkChatTest(name: string, text: string) {
  * Preview-only internal smoke test. Uses server-side chat handling directly
  * and, when configured, can also verify external SSO bypass for /api/chat.
  */
-export async function GET(request: Request) {
+export async function GET() {
   if (process.env.VERCEL_ENV === "production") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
