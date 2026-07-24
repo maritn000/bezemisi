@@ -1,21 +1,24 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Outfit } from "next/font/google";
+
+import { Footer } from "@/components/site/footer";
+import { Header } from "@/components/site/header";
+
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const outfit = Outfit({
+  variable: "--font-outfit",
   subsets: ["latin", "latin-ext"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Bez emisí AI",
+  metadataBase: new URL("https://bezemisi.vercel.app"),
+  title: {
+    default: "Bez emisí | Elektromobily srozumitelně",
+    template: "%s | Bez emisí",
+  },
   description:
-    "Nezávislý průvodce světem elektromobility. Připravujeme AI asistenta o elektromobilech, nabíjení a každodenním používání.",
+    "Pomoc s výběrem elektromobilu, nabíjením a cestou k ověřené nabídce Bez emisí.",
 };
 
 export default function RootLayout({
@@ -24,11 +27,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="cs"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="flex min-h-full flex-col">{children}</body>
+    <html lang="cs" className={`${outfit.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col">
+        <a className="skip-link" href="#hlavni-obsah">
+          Přeskočit na obsah
+        </a>
+        <Header />
+        <main id="hlavni-obsah" className="flex-1">
+          {children}
+        </main>
+        <Footer />
+      </body>
     </html>
   );
 }

@@ -1,19 +1,127 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  --background: #fbfbff;
+  --foreground: #1f0556;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-outfit);
+  --color-purple-950: #1f0556;
+  --color-lavender: #f0f0ff;
+  --color-blue-700: #0043ff;
+  --color-green-400: #00ff7f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-outfit), Arial, Helvetica, sans-serif;
+  font-weight: 350;
+}
+
+button,
+a,
+input,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.site-container {
+  width: min(100% - 3rem, 85rem);
+  margin-inline: auto;
+}
+
+.site-section {
+  padding-block: clamp(4rem, 8vw, 7rem);
+}
+
+.button {
+  display: inline-flex;
+  min-height: 3.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.7rem;
+  padding: 0.8rem 1.6rem;
+  font-size: 1rem;
+  font-weight: 700;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+}
+
+.button:focus-visible {
+  outline: 3px solid #00ff7f;
+  outline-offset: 3px;
+}
+
+.button-blue {
+  background: #0043ff;
+  color: white;
+}
+
+.button-blue:hover {
+  background: #0037c4;
+}
+
+.button-green {
+  background: #00ff7f;
+  color: #1f0556;
+}
+
+.button-green:hover {
+  background: #72ffb8;
+}
+
+.button-outline {
+  border: 2px solid #1f0556;
+  color: #1f0556;
+}
+
+.button-outline:hover {
+  background: #1f0556;
+  color: white;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: 0.5rem;
+  background: white;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  color: #1f0556;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+::selection {
+  background: #00ff7f;
+  color: #1f0556;
+}
+
+@media (max-width: 640px) {
+  .site-container {
+    width: min(100% - 2rem, 85rem);
+  }
 }

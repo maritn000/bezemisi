@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 
+import { isOpenAIConfigured } from "@/lib/chat/model-config";
 import { checkDatabaseHealth } from "@/lib/db/health";
 
 export async function GET() {
   const timestamp = new Date().toISOString();
   const databaseHealth = await checkDatabaseHealth();
   const databaseStatus = databaseHealth.status;
-  const overallStatus = databaseStatus === "connected" ? "ok" : "degraded";
 
   return NextResponse.json(
     {
-      status: overallStatus,
       application: "ok",
       database: databaseStatus,
+      openai: isOpenAIConfigured() ? "configured" : "not_configured",
       timestamp,
     },
     {
