@@ -12,7 +12,12 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "db:verify": "tsx -r tsconfig-paths/register scripts/verify-db.ts"
+    "db:verify": "tsx -r tsconfig-paths/register scripts/verify-db.ts",
+    "db:inspect": "tsx -r tsconfig-paths/register scripts/inspect-db.ts",
+    "catalogue:discover": "tsx -r tsconfig-paths/register scripts/catalogue/discover.ts",
+    "catalogue:ingest": "tsx -r tsconfig-paths/register scripts/catalogue/ingest.ts",
+    "catalogue:validate": "tsx -r tsconfig-paths/register scripts/catalogue/validate.ts",
+    "catalogue:report": "tsx -r tsconfig-paths/register scripts/catalogue/report.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.20",

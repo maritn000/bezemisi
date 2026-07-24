@@ -58,3 +58,20 @@ export function resolveDatabaseUrlFromEnv(
 export function getDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   return resolveDatabaseUrlFromEnv(env).url;
 }
+
+export function redactDatabaseUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return {
+      host: parsed.hostname,
+      database: parsed.pathname.replace(/^\//, ""),
+      user: parsed.username ? "***" : null,
+    };
+  } catch {
+    return {
+      host: "unknown",
+      database: "unknown",
+      user: null,
+    };
+  }
+}

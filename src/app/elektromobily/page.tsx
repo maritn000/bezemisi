@@ -5,30 +5,65 @@ import { CtaSection } from "@/components/site/cta-section";
 import { Hero } from "@/components/site/hero";
 import { SectionHeading } from "@/components/site/section-heading";
 import { VehicleGrid } from "@/components/site/vehicle-grid";
+import { getPublicVehicleCards } from "@/lib/catalogue/public-catalogue";
 import { presentedVehicles } from "@/lib/site-content";
 
 export const metadata: Metadata = {
   title: "Elektromobily",
   description:
-    "Přehled elektromobilů prezentovaných Bez emisí a bezpečná cesta k ověřeným parametrům.",
+    "Přehled elektromobilů prezentovaných Bez emisí a ověřené parametry z katalogu.",
 };
 
-export default function ElectricVehiclesPage() {
+export const dynamic = "force-dynamic";
+
+export default async function ElectricVehiclesPage() {
+  let vehicles: Array<{
+    name: string;
+    category: string;
+    href: string;
+    rangeKm: number | null;
+    priceFrom: number | null;
+    observedAt: string | null;
+  }> = presentedVehicles.map((vehicle) => ({
+    name: vehicle.name,
+    category: vehicle.category,
+    href: vehicle.href,
+    rangeKm: null,
+    priceFrom: null,
+    observedAt: null,
+  }));
+
+  try {
+    const catalogueCards = await getPublicVehicleCards();
+    if (catalogueCards.length > 0) {
+      vehicles = catalogueCards.map((card) => ({
+        name: card.name,
+        category: card.category,
+        href: card.href,
+        rangeKm: card.rangeKm,
+        priceFrom: card.priceFrom,
+        observedAt: card.observedAt,
+      }));
+    }
+  } catch {
+    // Fallback to static presentation when database is unavailable.
+  }
+
   return (
     <>
       <Hero
         eyebrow="Elektromobily"
         title="Pořídit si elektroauto? Začněte svými potřebami."
-        description="Prohlédněte si orientační přehled modelů. Přesné parametry, ceny a dostupnost neuvádíme, dokud nejsou v ověřeném katalogu."
+        description="Prohlédněte si modely prezentované Bez emisí. U každého uvedeného údaje pocházejí z ověřeného katalogu se zdrojem a datem pozorování."
         secondary={{ href: "/jak-vybrat", label: "Jak vybrat vůz" }}
       />
       <section className="site-section bg-white">
         <Container>
           <SectionHeading
             title="Modely v prezentaci Bez emisí"
-            description="Tato první verze nenahrazuje aktuální skladovou nabídku. U každého faktu bude později uveden zdroj a čas ověření."
+            description="Zobrazeny jsou pouze ověřené hodnoty z katalogu. Chybějící údaje zůstávají prázdné."
           />
-          <VehicleGrid vehicles={presentedVehicles} />
+          <VehicleGrid vehicles={vehicles} />
         </Container>
       </section>
       <section className="site-section bg-lavender">
