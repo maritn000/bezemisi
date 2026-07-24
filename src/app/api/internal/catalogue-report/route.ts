@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { desc } from "drizzle-orm";
 
+import {
+  isCatalogueAdminAuthorized,
+  isCatalogueAdminConfigured,
+} from "@/lib/catalogue/admin-auth";
 import { countCatalogueStats } from "@/lib/catalogue/repositories/catalogue-repository";
 import { validateCatalogue } from "@/lib/catalogue/validation";
 import { createDb } from "@/db/create-client";
@@ -9,15 +13,12 @@ import { catalogueIngestionIssues, catalogueIngestionRuns } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
-function isAuthorized(request: Request) {
-  const token = process.env.CATALOGUE_ADMIN_TOKEN;
-  if (!token) return false;
-  const header = request.headers.get("authorization");
-  return header === `Bearer ${token}`;
-}
-
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
+  if (!isCatalogueAdminConfigured()) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!isCatalogueAdminAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
