@@ -8,22 +8,28 @@ import {
 } from "@/lib/database-url";
 
 import {
-  BLOCKED_DATABASE_IDENTIFIERS,
-  FOUNDATION_TABLES,
-} from "./constants";
+  classifyDatabaseSchema,
+  formatUnrelatedDatabaseReason,
+  inspectDatabaseSchema,
+  type DatabaseTargetKind,
+} from "./classify-database";
+import { BLOCKED_DATABASE_IDENTIFIERS } from "./constants";
+
+export type DatabaseTargetClassification = DatabaseTargetKind;
 
 export type DatabaseTargetPreflight = {
   ok: true;
   resolved: ResolvedDatabaseUrl;
   redacted: ReturnType<typeof redactDatabaseUrl>;
   sourceKey: string;
-  foundationTablesPresent: boolean;
+  classification: DatabaseTargetClassification;
   existingTables: string[];
 };
 
 export type DatabaseTargetPreflightFailure = {
   ok: false;
   reason: string;
+  classification?: DatabaseTargetClassification;
 };
 
 export type DatabaseTargetPreflightResult =
@@ -47,6 +53,7 @@ export async function runDatabaseTargetPreflight(
     return {
       ok: false,
       reason: "Database connection is not configured.",
+      classification: "unavailable",
     };
   }
 
@@ -55,6 +62,7 @@ export async function runDatabaseTargetPreflight(
     return {
       ok: false,
       reason: "Database target could not be identified from the connection string.",
+      classification: "unavailable",
     };
   }
 
@@ -62,6 +70,7 @@ export async function runDatabaseTargetPreflight(
     return {
       ok: false,
       reason: `Database target "${redacted.database}" is blocked for catalogue bootstrap.`,
+      classification: "unavailable",
     };
   }
 
@@ -73,29 +82,18 @@ export async function runDatabaseTargetPreflight(
     return {
       ok: false,
       reason: "Database connection is unavailable.",
+      classification: "unavailable",
     };
   }
 
-  const tablesResult = await db.execute<{ table_name: string }>(sql`
-    SELECT table_name
-    FROM information_schema.tables
-    WHERE table_schema = 'public'
-    ORDER BY table_name
-  `);
+  const inventory = await inspectDatabaseSchema(resolved.url);
+  const classification = classifyDatabaseSchema(inventory);
 
-  const existingTables = tablesResult.rows.map((row) => row.table_name);
-  const foundationTablesPresent = FOUNDATION_TABLES.every((table) =>
-    existingTables.includes(table),
-  );
-
-  if (!foundationTablesPresent) {
-    const missingFoundationTables = FOUNDATION_TABLES.filter(
-      (table) => !existingTables.includes(table),
-    );
+  if (classification.kind === "unrelated_nonempty_database") {
     return {
       ok: false,
-      reason:
-        `Expected Bez emisí foundation tables are missing (${missingFoundationTables.join(", ")}); refusing to bootstrap an unrelated database. Run "npm run db:prepare-bootstrap" against the correct Production database first.`,
+      reason: formatUnrelatedDatabaseReason(classification),
+      classification: classification.kind,
     };
   }
 
@@ -104,7 +102,10 @@ export async function runDatabaseTargetPreflight(
     resolved,
     redacted,
     sourceKey: resolved.sourceKey,
-    foundationTablesPresent,
-    existingTables,
+    classification: classification.kind,
+    existingTables:
+      classification.kind === "existing_bezemisi_database"
+        ? classification.existingTables
+        : inventory.publicTables,
   };
 }
