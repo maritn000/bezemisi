@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   },
   description:
     "Pomoc s výběrem elektromobilu, nabíjením a cestou k ověřené nabídce Bez emisí.",
+  icons: {
+    icon: "/brand/bezemisi-favicon.png",
+    apple: "/brand/bezemisi-favicon.png",
+  },
 };
 
 export default function RootLayout({

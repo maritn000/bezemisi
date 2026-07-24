@@ -1,5 +1,7 @@
 import Image from "next/image";
-import Link from "next/link";
+
+import { ButtonLink } from "./button";
+import { Container } from "./container";
 
 export function Hero({
   eyebrow,
@@ -16,8 +18,8 @@ export function Hero({
 }) {
   return (
     <section className="overflow-hidden bg-lavender">
-      <div className="site-container grid min-h-[33rem] items-center gap-8 py-12 lg:grid-cols-[1.05fr_.95fr] lg:py-16">
-        <div className="relative z-10">
+      <Container className="grid min-h-[33rem] items-center gap-8 py-12 lg:grid-cols-[1.05fr_.95fr] lg:py-16">
+        <div className="relative z-10 animate-[fade-up_.7s_ease_both]">
           {eyebrow && (
             <p className="mb-4 font-bold uppercase tracking-[0.15em] text-blue-700">
               {eyebrow}
@@ -30,17 +32,17 @@ export function Hero({
             {description}
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href={primary.href} className="button button-blue">
+            <ButtonLink href={primary.href} variant="blue">
               {primary.label}
-            </Link>
+            </ButtonLink>
             {secondary && (
-              <Link href={secondary.href} className="button button-outline">
+              <ButtonLink href={secondary.href} variant="outline">
                 {secondary.label}
-              </Link>
+              </ButtonLink>
             )}
           </div>
         </div>
-        <div className="relative mx-auto w-full max-w-2xl">
+        <div className="relative mx-auto w-full max-w-2xl animate-[fade-in_.9s_ease_.1s_both]">
           <div className="absolute -inset-10 rounded-full bg-green-400/35 blur-3xl" />
           <Image
             src="/ev-placeholder.svg"
@@ -52,7 +54,7 @@ export function Hero({
             className="relative h-auto w-full rounded-[2rem]"
           />
         </div>
-      </div>
+      </Container>
     </section>
   );
 }

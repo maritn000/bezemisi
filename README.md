@@ -93,6 +93,7 @@ Migrace jsou uloženy ve složce `drizzle/`. Před aplikací vždy zkontrolujte 
 
 ```json
 {
+  "status": "ok",
   "application": "ok",
   "database": "connected",
   "openai": "configured",
@@ -102,7 +103,7 @@ Migrace jsou uloženy ve složce `drizzle/`. Před aplikací vždy zkontrolujte 
 
 Endpoint provádí pouze **read-only** dotaz (`SELECT 1`). Nezapisuje záznamy do `app_health_checks` při každém požadavku.
 Stav OpenAI pouze říká, zda je klíč nastavený; klíč neověřuje voláním a nikdy
-jej nevrací.
+jej nevrací. Pole `status` může být `ok`, `degraded` nebo `error`.
 
 ## Web a AI chat
 
@@ -120,9 +121,13 @@ Chat na `/chat`:
 - má oddělené adaptéry pro budoucí data o vozech a obchodních podmínkách,
 - při chybějících datech nesmí konkrétní hodnoty odhadovat.
 
-Současný rate limiter je pouze procesní vývojová ochrana. V serverless provozu
-není globální ani trvalý; před produkčním provozem jej nahraďte distribuovaným
-úložištěm a zachovejte rozhraní `ChatRateLimiter`.
+Současný rate limiter je **development fallback** v paměti procesu
+(limit za minutu i za den). V serverless provozu není globální ani trvalý;
+před produkčním provozem jej nahraďte distribuovaným úložištěm a zachovejte
+rozhraní `ChatRateLimiter`. Klíč požadavku je hashovaný a neukládá raw IP.
+
+Persistenci zajišťují `conversation-repository` a `message-repository` pouze při
+`CHAT_PERSISTENCE_ENABLED=true` a dostupném databázovém URL.
 
 Jednorázový test zápisu a čtení spusťte skriptem:
 

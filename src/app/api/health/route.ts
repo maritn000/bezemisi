@@ -5,18 +5,26 @@ import { checkDatabaseHealth } from "@/lib/db/health";
 
 export async function GET() {
   const timestamp = new Date().toISOString();
-  const databaseHealth = await checkDatabaseHealth();
-  const databaseStatus = databaseHealth.status;
+  const { status: database } = await checkDatabaseHealth();
+  const openai = isOpenAIConfigured() ? "configured" : "not_configured";
+
+  let status: "ok" | "degraded" | "error" = "ok";
+  if (database === "error") {
+    status = "error";
+  } else if (database !== "connected" || openai !== "configured") {
+    status = "degraded";
+  }
 
   return NextResponse.json(
     {
+      status,
       application: "ok",
-      database: databaseStatus,
-      openai: isOpenAIConfigured() ? "configured" : "not_configured",
+      database,
+      openai,
       timestamp,
     },
     {
-      status: databaseStatus === "connected" ? 200 : 503,
+      status: status === "error" ? 503 : 200,
     },
   );
 }

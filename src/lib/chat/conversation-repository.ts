@@ -4,19 +4,10 @@ import { eq } from "drizzle-orm";
 
 import { resolveDatabaseUrlFromEnv } from "@/lib/database-url";
 
-import type { VerifiedSource } from "./grounding";
-
-type StoredMessageRole = "user" | "assistant";
-
 export interface ConversationRepository {
   readonly enabled: boolean;
   createConversation(): Promise<string | null>;
-  storeMessage(input: {
-    conversationId: string;
-    role: StoredMessageRole;
-    content: string;
-    sources?: VerifiedSource[];
-  }): Promise<void>;
+  touchConversation(conversationId: string): Promise<void>;
   storeSafeError(input: {
     conversationId: string;
     code: string;
@@ -30,7 +21,7 @@ class DisabledConversationRepository implements ConversationRepository {
     return null;
   }
 
-  async storeMessage() {}
+  async touchConversation() {}
 
   async storeSafeError() {}
 }
@@ -51,22 +42,15 @@ class DrizzleConversationRepository implements ConversationRepository {
     return conversation.id;
   }
 
-  async storeMessage(input: {
-    conversationId: string;
-    role: StoredMessageRole;
-    content: string;
-    sources?: VerifiedSource[];
-  }) {
-    const [{ db }, { messages }] = await Promise.all([
+  async touchConversation(conversationId: string) {
+    const [{ db }, { conversations }] = await Promise.all([
       import("@/db"),
       import("@/db/schema"),
     ]);
-    await db.insert(messages).values({
-      conversationId: input.conversationId,
-      role: input.role,
-      content: input.content,
-      metadata: { sources: input.sources ?? [] },
-    });
+    await db
+      .update(conversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(conversations.id, conversationId));
   }
 
   async storeSafeError(input: { conversationId: string; code: string }) {
@@ -95,7 +79,7 @@ function databaseIsConfigured() {
 
 /**
  * Persistence requires both a database URL and an explicit capability flag.
- * This avoids writing to an unconfirmed database environment.
+ * Avoid writing to an unconfirmed database environment.
  */
 export function getConversationRepository(): ConversationRepository {
   if (
@@ -103,6 +87,12 @@ export function getConversationRepository(): ConversationRepository {
     databaseIsConfigured()
   ) {
     return new DrizzleConversationRepository();
+  }
+
+  if (process.env.CHAT_PERSISTENCE_ENABLED === "true") {
+    console.warn(
+      "CHAT_PERSISTENCE_ENABLED=true, ale databáze není nakonfigurovaná. Chat běží bez persistence.",
+    );
   }
 
   return new DisabledConversationRepository();

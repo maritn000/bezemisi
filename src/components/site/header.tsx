@@ -2,13 +2,15 @@ import Link from "next/link";
 
 import { navigation } from "@/lib/site-content";
 
+import { ButtonLink } from "./button";
+import { Container } from "./container";
 import { Logo } from "./logo";
 import { MobileNavigation } from "./mobile-navigation";
 
 export function Header() {
   return (
     <header className="sticky top-0 z-50 border-b border-purple-950/5 bg-white/95 backdrop-blur">
-      <div className="site-container flex h-[72px] items-center justify-between gap-6 lg:h-[92px]">
+      <Container className="flex h-[72px] items-center justify-between gap-6 lg:h-[92px]">
         <Logo />
         <nav
           aria-label="Hlavní navigace"
@@ -24,14 +26,15 @@ export function Header() {
             </Link>
           ))}
         </nav>
-        <Link
+        <ButtonLink
           href="/kontakt"
-          className="button button-green !hidden lg:!inline-flex"
+          variant="green"
+          className="!hidden lg:!inline-flex"
         >
           Kontakt
-        </Link>
+        </ButtonLink>
         <MobileNavigation />
-      </div>
+      </Container>
     </header>
   );
 }

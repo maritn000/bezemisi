@@ -1,9 +1,11 @@
 import Link from "next/link";
 
+import { ButtonLink } from "@/components/site/button";
+import { Container } from "@/components/site/container";
 import { CtaSection } from "@/components/site/cta-section";
 import { Hero } from "@/components/site/hero";
 import { SectionHeading } from "@/components/site/section-heading";
-import { VehicleCard } from "@/components/site/vehicle-card";
+import { VehicleGrid } from "@/components/site/vehicle-grid";
 import { exampleQuestions, presentedVehicles } from "@/lib/site-content";
 
 export default function HomePage() {
@@ -17,19 +19,24 @@ export default function HomePage() {
       />
 
       <section className="site-section bg-white">
-        <div className="site-container">
+        <Container>
           <SectionHeading
             eyebrow="AI poradce"
-            title="Začněte otázkou, která je pro vás důležitá"
-            description="Poradce zatím pracuje bez připojeného katalogu a chybějící parametry nebude odhadovat."
+            title="Najděte elektromobil, který vám opravdu sedne"
+            description="Zeptejte se na dojezd, nabíjení, výbavu, cenu nebo podmínky nákupu vozů v nabídce Bez emisí."
             centered
           />
+          <div className="mt-8 flex justify-center">
+            <ButtonLink href="/chat" variant="blue">
+              Zeptat se AI poradce
+            </ButtonLink>
+          </div>
           <div className="mx-auto mt-9 grid max-w-5xl gap-3 sm:grid-cols-2">
             {exampleQuestions.map((question) => (
               <Link
                 key={question}
-                href={`/chat?q=${encodeURIComponent(question)}`}
-                className="group flex min-h-20 items-center justify-between gap-4 rounded-2xl border border-purple-950/10 bg-lavender px-5 py-4 font-medium text-purple-950 transition hover:border-blue-700 hover:bg-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                href={`/chat?q=${encodeURIComponent(question)}&send=1`}
+                className="group flex min-h-20 items-center justify-between gap-4 rounded-2xl border border-purple-950/10 bg-lavender px-5 py-4 font-medium text-purple-950 transition duration-300 hover:border-blue-700 hover:bg-white hover:shadow-[0_12px_30px_rgba(31,5,86,.08)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
               >
                 <span>{question}</span>
                 <span
@@ -41,32 +48,25 @@ export default function HomePage() {
               </Link>
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
       <section className="site-section bg-lavender">
-        <div className="site-container">
+        <Container>
           <SectionHeading
             eyebrow="Elektromobily"
             title="Modely prezentované Bez emisí"
             description="Názvy modelů slouží jako orientační rozcestník. Parametry a obchodní údaje zobrazíme až z ověřeného katalogu."
           />
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            {presentedVehicles.map((vehicle) => (
-              <VehicleCard key={vehicle.name} {...vehicle} />
-            ))}
-          </div>
-          <Link
-            href="/elektromobily"
-            className="button button-outline mt-9"
-          >
+          <VehicleGrid vehicles={presentedVehicles} />
+          <ButtonLink href="/elektromobily" variant="outline" className="mt-9">
             Všechny elektromobily
-          </Link>
-        </div>
+          </ButtonLink>
+        </Container>
       </section>
 
       <section className="site-section bg-white">
-        <div className="site-container grid gap-10 lg:grid-cols-[.85fr_1.15fr] lg:items-start">
+        <Container className="grid gap-10 lg:grid-cols-[.85fr_1.15fr] lg:items-start">
           <SectionHeading
             eyebrow="Jak pomáháme"
             title="Od prvních otázek k ověřené nabídce"
@@ -81,7 +81,7 @@ export default function HomePage() {
             ].map(([number, title, text]) => (
               <article
                 key={number}
-                className="rounded-[1.25rem] border border-purple-950/10 p-6"
+                className="rounded-[1.25rem] border border-purple-950/10 p-6 transition duration-300 hover:-translate-y-0.5"
               >
                 <span className="font-bold text-blue-700">{number}</span>
                 <h3 className="mt-3 text-2xl font-light">{title}</h3>
@@ -89,12 +89,13 @@ export default function HomePage() {
               </article>
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
       <CtaSection
         title="Ptejte se na to, co řešíte právě teď"
         description="AI poradce je omezený na elektromobily a služby Bez emisí. Když ověřený údaj chybí, řekne to."
+        label="Zeptat se AI poradce"
       />
     </>
   );

@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
+import { Container } from "@/components/site/container";
 import { CtaSection } from "@/components/site/cta-section";
 import { Hero } from "@/components/site/hero";
 import { SectionHeading } from "@/components/site/section-heading";
-import { VehicleCard } from "@/components/site/vehicle-card";
+import { VehicleGrid } from "@/components/site/vehicle-grid";
 import { presentedVehicles } from "@/lib/site-content";
 
 export const metadata: Metadata = {
@@ -22,20 +23,16 @@ export default function ElectricVehiclesPage() {
         secondary={{ href: "/jak-vybrat", label: "Jak vybrat vůz" }}
       />
       <section className="site-section bg-white">
-        <div className="site-container">
+        <Container>
           <SectionHeading
             title="Modely v prezentaci Bez emisí"
             description="Tato první verze nenahrazuje aktuální skladovou nabídku. U každého faktu bude později uveden zdroj a čas ověření."
           />
-          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {presentedVehicles.map((vehicle) => (
-              <VehicleCard key={vehicle.name} {...vehicle} />
-            ))}
-          </div>
-        </div>
+          <VehicleGrid vehicles={presentedVehicles} />
+        </Container>
       </section>
       <section className="site-section bg-lavender">
-        <div className="site-container">
+        <Container>
           <SectionHeading
             eyebrow="Podle využití"
             title="Neexistuje jeden nejlepší elektromobil"
@@ -56,7 +53,7 @@ export default function ElectricVehiclesPage() {
               </article>
             ))}
           </div>
-        </div>
+        </Container>
       </section>
       <CtaSection />
     </>
