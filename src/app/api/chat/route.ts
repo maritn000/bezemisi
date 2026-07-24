@@ -1,5 +1,7 @@
 import { handleChatRequest } from "@/lib/chat/chat-service";
+import { logChatError } from "@/lib/chat/diagnostics";
 import { CHAT_ERRORS } from "@/lib/chat/errors";
+import { isOpenAIConfigured } from "@/lib/chat/model-config";
 import {
   getChatRateLimiter,
   getRequestRateLimitKey,
@@ -18,6 +20,11 @@ export async function POST(request: Request) {
     getRequestRateLimitKey(request),
   );
   if (!rateLimit.allowed) {
+    logChatError({
+      category: "rate_limit",
+      message: "Chat rate limit exceeded",
+      openaiConfigured: isOpenAIConfigured(),
+    });
     return new Response(
       JSON.stringify({
         error: CHAT_ERRORS.rateLimit,
@@ -36,14 +43,24 @@ export async function POST(request: Request) {
   try {
     parsedBody = chatRequestSchema.parse(await request.json());
   } catch (error) {
-    console.error("Chat payload validation failed", error);
+    logChatError({
+      category: "invalid_request",
+      message: "Chat payload validation failed",
+      openaiConfigured: isOpenAIConfigured(),
+      cause: error,
+    });
     return publicError(CHAT_ERRORS.invalidRequest, 400);
   }
 
   try {
     return await handleChatRequest(parsedBody);
   } catch (error) {
-    console.error("Chat request failed", error);
+    logChatError({
+      category: "unknown",
+      message: "Chat request failed before streaming response",
+      openaiConfigured: isOpenAIConfigured(),
+      cause: error,
+    });
     return publicError(CHAT_ERRORS.general, 503);
   }
 }
