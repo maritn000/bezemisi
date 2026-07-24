@@ -19,8 +19,9 @@ const emptyContext = (): VerifiedContext => ({ content: "", sources: [] });
  * that have been verified and are safe to expose.
  */
 export async function retrieveVehicleContext(
-  _query: string,
+  query: string,
 ): Promise<VerifiedContext> {
+  void query;
   return emptyContext();
 }
 
@@ -28,8 +29,9 @@ export async function retrieveVehicleContext(
  * Adapter boundary for current prices, availability and purchase conditions.
  */
 export async function retrieveCommercialContext(
-  _query: string,
+  query: string,
 ): Promise<VerifiedContext> {
+  void query;
   return emptyContext();
 }
 
