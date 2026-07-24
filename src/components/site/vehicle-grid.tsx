@@ -7,6 +7,9 @@ export function VehicleGrid({
     name: string;
     category: string;
     href?: string;
+    rangeKm?: number | null;
+    priceFrom?: number | null;
+    observedAt?: string | null;
   }>;
 }) {
   return (

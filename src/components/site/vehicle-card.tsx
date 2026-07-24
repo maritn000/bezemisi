@@ -7,11 +7,32 @@ export function VehicleCard({
   name,
   category,
   href = "/chat",
+  rangeKm,
+  priceFrom,
+  observedAt,
 }: {
   name: string;
   category: string;
   href?: string;
+  rangeKm?: number | null;
+  priceFrom?: number | null;
+  observedAt?: string | null;
 }) {
+  const priceText =
+    priceFrom != null
+      ? `Cena od ${new Intl.NumberFormat("cs-CZ", {
+          style: "currency",
+          currency: "CZK",
+          maximumFractionDigits: 0,
+        }).format(priceFrom)}`
+      : "Cena neuvedena v ověřeném katalogu";
+
+  const rangeText =
+    rangeKm != null ? `WLTP dojezd až ${rangeKm} km` : "Dojezd neuveden";
+
+  const freshness =
+    observedAt != null ? `Nabídka pozorována ${observedAt}` : null;
+
   return (
     <article className="overflow-hidden rounded-[1.25rem] bg-white ring-1 ring-purple-950/8 transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_rgba(31,5,86,.08)]">
       <Link href={href} className="block focus-visible:outline-none">
@@ -37,8 +58,15 @@ export function VehicleCard({
           </Link>
         </h3>
         <p className="mt-4 min-h-14 leading-7 text-purple-950/70">
-          Ověřené parametry, cena a dostupnost budou doplněny po připojení
-          katalogu.
+          {rangeText}
+          <br />
+          {priceText}
+          {freshness ? (
+            <>
+              <br />
+              <span className="text-sm">{freshness}</span>
+            </>
+          ) : null}
         </p>
         <ButtonLink href={href} variant="blue" className="mt-6 w-full">
           Více o modelu
