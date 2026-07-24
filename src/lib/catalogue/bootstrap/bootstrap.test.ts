@@ -90,7 +90,7 @@ test("incorrect database target aborts before writes", async () => {
     isEnabled: () => true,
     preflight: async () => ({
       ok: false,
-      reason: "Expected Bez emisí foundation tables are missing; refusing to bootstrap an unrelated database.",
+      reason: "Expected Bez emisí foundation tables are missing (app_health_checks, sources, conversations, messages); refusing to bootstrap an unrelated database. Run \"npm run db:prepare-bootstrap\" against the correct Production database first.",
     }),
     inspectSchema: async () => {
       throw new Error("should not run");

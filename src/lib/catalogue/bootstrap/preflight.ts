@@ -89,10 +89,13 @@ export async function runDatabaseTargetPreflight(
   );
 
   if (!foundationTablesPresent) {
+    const missingFoundationTables = FOUNDATION_TABLES.filter(
+      (table) => !existingTables.includes(table),
+    );
     return {
       ok: false,
       reason:
-        "Expected Bez emisí foundation tables are missing; refusing to bootstrap an unrelated database.",
+        `Expected Bez emisí foundation tables are missing (${missingFoundationTables.join(", ")}); refusing to bootstrap an unrelated database. Run "npm run db:prepare-bootstrap" against the correct Production database first.`,
     };
   }
 
