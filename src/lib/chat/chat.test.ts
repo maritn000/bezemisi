@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { z } from "zod";
 
 import {
   buildGroundedChatContext,
@@ -50,6 +51,43 @@ test("accepts AI SDK v7 DefaultChatTransport metadata fields", () => {
     assert.equal("id" in result.data, false);
     assert.equal("trigger" in result.data, false);
   }
+});
+
+test("rejects strict pre-v7 payloads that included transport metadata", () => {
+  const legacyStrictSchema = z
+    .object({
+      messages: z.array(
+        z
+          .object({
+            id: z.string().min(1).max(128),
+            role: z.enum(["user", "assistant"]),
+            parts: z
+              .array(
+                z
+                  .object({
+                    type: z.literal("text"),
+                    text: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH),
+                  })
+                  .strict(),
+              )
+              .min(1)
+              .max(4),
+          })
+          .strict(),
+      ),
+      conversationId: z.string().uuid().optional(),
+    })
+    .strict();
+
+  const sdkPayload = {
+    id: "chat-123",
+    trigger: "submit-message",
+    messageId: validMessage.id,
+    messages: [validMessage],
+  };
+
+  assert.equal(legacyStrictSchema.safeParse(sdkPayload).success, false);
+  assert.equal(chatRequestSchema.safeParse(sdkPayload).success, true);
 });
 
 test("rejects client-supplied system messages", () => {
@@ -115,6 +153,7 @@ test("identifies unrelated questions and prompt injection", () => {
     isClearlyOutOfScope("Jak mám nabíjet elektromobil na delší cestě?"),
     false,
   );
+  assert.equal(isClearlyOutOfScope("umíš něco?"), false);
 });
 
 test("empty verified retrieval does not invent facts or sources", async () => {

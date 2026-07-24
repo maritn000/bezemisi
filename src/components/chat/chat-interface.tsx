@@ -15,6 +15,8 @@ import {
 import { Button } from "@/components/site/button";
 import { exampleQuestions } from "@/lib/site-content";
 
+import { buildSendMessageInput } from "./chat-submit";
+
 function safeSourceUrl(value: string) {
   try {
     const url = new URL(value);
@@ -87,17 +89,17 @@ export function ChatInterface() {
 
   const isBusy = status === "submitted" || status === "streaming";
 
-  async function submitText(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || isBusy) return;
+  async function submitMessage(text: string) {
+    const payload = buildSendMessageInput(text);
+    if (!payload || isBusy) return;
     setInput("");
     clearError();
-    await sendMessage({ text: trimmed });
+    await sendMessage(payload);
   }
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    await submitText(input);
+    await submitMessage(input);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -116,7 +118,7 @@ export function ChatInterface() {
   useEffect(() => {
     if (!shouldAutoSend || !initialQuestion || autoSentRef.current) return;
     autoSentRef.current = true;
-    void submitText(initialQuestion);
+    void submitMessage(initialQuestion);
     // Intentionally run once for deep-linked example questions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldAutoSend, initialQuestion]);
@@ -171,7 +173,7 @@ export function ChatInterface() {
                 <button
                   key={question}
                   type="button"
-                  onClick={() => void submitText(question)}
+                  onClick={() => void submitMessage(question)}
                   disabled={isBusy}
                   className="rounded-xl border border-purple-950/10 bg-white p-4 text-left text-sm font-medium hover:border-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:opacity-50"
                 >
