@@ -7,6 +7,9 @@ export function VehicleGrid({
     name: string;
     category: string;
     href?: string;
+    image?: string;
+    imageAlt?: string;
+    tagline?: string;
   }>;
 }) {
   return (
