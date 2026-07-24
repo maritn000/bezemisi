@@ -48,6 +48,7 @@ export function Hero({
             width={960}
             height={540}
             priority
+            unoptimized
             className="relative h-auto w-full rounded-[2rem]"
           />
         </div>

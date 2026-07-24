@@ -26,7 +26,7 @@ export function Header() {
         </nav>
         <Link
           href="/kontakt"
-          className="button button-green hidden lg:inline-flex"
+          className="button button-green !hidden lg:!inline-flex"
         >
           Kontakt
         </Link>

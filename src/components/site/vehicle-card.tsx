@@ -15,6 +15,7 @@ export function VehicleCard({
         alt=""
         width={960}
         height={540}
+        unoptimized
         className="aspect-video w-full object-cover"
       />
       <div className="p-6">
