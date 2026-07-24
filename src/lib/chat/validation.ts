@@ -19,10 +19,19 @@ const messageSchema = z
   })
   .strict();
 
-export const chatRequestSchema = z
+export type ChatRequest = {
+  messages: z.infer<typeof messageSchema>[];
+  conversationId?: string;
+};
+
+const chatRequestCoreSchema = z
   .object({
     messages: z.array(messageSchema).min(1).max(MAX_HISTORY_MESSAGES),
     conversationId: z.string().uuid().optional(),
+    // AI SDK v7 DefaultChatTransport metadata — accepted but not trusted.
+    id: z.string().min(1).max(128).optional(),
+    trigger: z.enum(["submit-message", "regenerate-message"]).optional(),
+    messageId: z.string().min(1).max(128).optional(),
   })
   .strict()
   .refine(
@@ -38,6 +47,10 @@ export const chatRequestSchema = z
         0,
       ) <= MAX_TOTAL_HISTORY_LENGTH,
     "Conversation history is too long",
-  );
+  )
+  .transform(({ messages, conversationId }): ChatRequest => ({
+    messages,
+    conversationId,
+  }));
 
-export type ChatRequest = z.infer<typeof chatRequestSchema>;
+export const chatRequestSchema = chatRequestCoreSchema;

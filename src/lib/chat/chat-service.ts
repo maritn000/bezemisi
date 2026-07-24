@@ -9,6 +9,10 @@ import {
 } from "ai";
 
 import { getConversationRepository } from "./conversation-repository";
+import {
+  categorizeProviderError,
+  logChatError,
+} from "./diagnostics";
 import { CHAT_ERRORS } from "./errors";
 import {
   buildGroundedChatContext,
@@ -18,10 +22,18 @@ import {
   type VerifiedSource,
 } from "./grounding";
 import { getMessageRepository } from "./message-repository";
-import { getChatModelConfig, isOpenAIConfigured } from "./model-config";
+import {
+  getChatModelConfig,
+  getConfiguredChatModelName,
+  isOpenAIConfigured,
+} from "./model-config";
 import { isClearlyOutOfScope } from "./scope";
 import { buildSystemPrompt, REFUSAL } from "./system-prompt";
 import type { ChatRequest } from "./validation";
+
+function persistenceEnabled() {
+  return getConversationRepository().enabled;
+}
 
 function staticAssistantResponse(text: string, sources: VerifiedSource[] = []) {
   const partId = crypto.randomUUID();
@@ -51,14 +63,46 @@ async function resolveConversationId(_requestedId?: string) {
     return null;
   }
 
-  // Conversation continuity across requests will be wired after catalogue
-  // ingestion. Client-supplied IDs are validated by Zod but not trusted yet.
-  void _requestedId;
-  return conversations.createConversation();
+  try {
+    // Conversation continuity across requests will be wired after catalogue
+    // ingestion. Client-supplied IDs are validated by Zod but not trusted yet.
+    void _requestedId;
+    return await conversations.createConversation();
+  } catch (error) {
+    logChatError({
+      category: "persistence_error",
+      message: "Conversation creation failed; continuing without persistence",
+      openaiConfigured: isOpenAIConfigured(),
+      persistenceEnabled: true,
+      cause: error,
+    });
+    return null;
+  }
+}
+
+function logStreamError(error: unknown) {
+  const model = getConfiguredChatModelName();
+  logChatError({
+    category: categorizeProviderError(error),
+    message: "OpenAI chat stream failed",
+    model,
+    openaiConfigured: isOpenAIConfigured(),
+    persistenceEnabled: persistenceEnabled(),
+    cause: error,
+  });
 }
 
 export async function handleChatRequest(parsedBody: ChatRequest) {
+  const modelName = getConfiguredChatModelName();
+
   if (!isOpenAIConfigured()) {
+    logChatError({
+      category: "openai_not_configured",
+      message: "OPENAI_API_KEY is not configured",
+      model: modelName,
+      openaiConfigured: false,
+      persistenceEnabled: persistenceEnabled(),
+    });
     return Response.json(
       { error: CHAT_ERRORS.missingOpenAI },
       { status: 503 },
@@ -98,7 +142,14 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
         content: query,
       });
     } catch (error) {
-      console.error("Chat user message persistence failed", error);
+      logChatError({
+        category: "persistence_error",
+        message: "Chat user message persistence failed",
+        model: modelName,
+        openaiConfigured: true,
+        persistenceEnabled: true,
+        cause: error,
+      });
     }
   }
 
@@ -121,7 +172,14 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
           sources: groundedContext.sources,
         });
       } catch (error) {
-        console.error("Chat assistant message persistence failed", error);
+        logChatError({
+          category: "persistence_error",
+          message: "Chat assistant message persistence failed",
+          model: modelName,
+          openaiConfigured: true,
+          persistenceEnabled: true,
+          cause: error,
+        });
       }
     },
   });
@@ -129,7 +187,7 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
   if (sourcesForUi.length === 0) {
     return result.toUIMessageStreamResponse({
       onError(error) {
-        console.error("OpenAI chat stream failed", error);
+        logStreamError(error);
         return CHAT_ERRORS.streamFailed;
       },
     });
@@ -140,7 +198,7 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
       writer.merge(
         result.toUIMessageStream({
           onError(error) {
-            console.error("OpenAI chat stream failed", error);
+            logStreamError(error);
             return CHAT_ERRORS.streamFailed;
           },
         }),
