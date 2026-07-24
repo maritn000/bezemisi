@@ -5,7 +5,17 @@ import { Breadcrumbs } from "@/components/site/breadcrumbs";
 import { ButtonLink } from "@/components/site/button";
 import { Container } from "@/components/site/container";
 import { CtaSection } from "@/components/site/cta-section";
-import { findPresentedVehicle } from "@/lib/site-content";
+import { InquiryForm } from "@/components/site/inquiry-form";
+import {
+  PurchaseProcess,
+  RelatedVehicles,
+  VehicleHeroImage,
+} from "@/components/site/vehicle-detail";
+import {
+  companyInfo,
+  findPresentedVehicle,
+  getRelatedVehicles,
+} from "@/lib/site-content";
 
 type Params = { brand: string; model: string };
 
@@ -29,7 +39,7 @@ export async function generateMetadata({
   }
   return {
     title: vehicle.name,
-    description: `Orientační stránka modelu ${vehicle.name}. Ověřené parametry budou doplněny z katalogu.`,
+    description: vehicle.tagline,
   };
 }
 
@@ -42,6 +52,8 @@ export default async function VehicleDetailPage({
   const vehicle = findPresentedVehicle(brand, model);
   if (!vehicle) notFound();
 
+  const related = getRelatedVehicles(brand, model);
+
   return (
     <>
       <section className="site-section bg-lavender">
@@ -53,7 +65,7 @@ export default async function VehicleDetailPage({
               { label: vehicle.name },
             ]}
           />
-          <div className="grid gap-10 lg:grid-cols-[1.05fr_.95fr] lg:items-center">
+          <div className="grid gap-10 lg:grid-cols-[1.05fr_.95fr] lg:items-start">
             <div>
               <p className="font-bold uppercase tracking-[0.15em] text-blue-700">
                 {vehicle.category}
@@ -62,9 +74,7 @@ export default async function VehicleDetailPage({
                 {vehicle.name}
               </h1>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-purple-950/70">
-                Tato stránka připravuje detail modelu podle veřejné struktury
-                Bez emisí. Konkrétní dojezd, nabíjení, cenu ani dostupnost zde
-                zatím neuvádíme — ověřený katalog ještě není připojen.
+                {vehicle.tagline}
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <ButtonLink
@@ -73,43 +83,90 @@ export default async function VehicleDetailPage({
                 >
                   Zeptat se AI poradce
                 </ButtonLink>
-                <ButtonLink href="/kontakt" variant="outline">
-                  Osobní kontakt
+                <ButtonLink href="/kontakt" variant="green">
+                  Nezávazná poptávka
                 </ButtonLink>
               </div>
             </div>
-            <div className="overflow-hidden rounded-[1.5rem] bg-white p-4 ring-1 ring-purple-950/8">
-              {/* Local placeholder — production vehicle photography is not hotlinked. */}
-              <div
-                className="aspect-video rounded-[1.1rem] bg-[linear-gradient(135deg,#f0f0ff_0%,#dfe8ff_45%,#c8ffdf_100%)]"
-                role="img"
-                aria-label={`Ilustrační placeholder pro ${vehicle.name}`}
-              />
-              <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                {[
-                  ["Dojezd", "Čeká na ověřený katalog"],
-                  ["Nabíjení", "Čeká na ověřený katalog"],
-                  ["Cena", "Neuvádíme bez ověření"],
-                  ["Dostupnost", "Neuvádíme bez ověření"],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-xl bg-lavender px-4 py-3"
-                  >
-                    <dt className="text-xs font-bold uppercase tracking-[0.12em] text-blue-700">
-                      {label}
-                    </dt>
-                    <dd className="mt-1 text-sm text-purple-950/75">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+            <VehicleHeroImage vehicle={vehicle} />
           </div>
         </Container>
       </section>
+
+      <section className="site-section bg-white">
+        <Container className="grid gap-10 lg:grid-cols-[1fr_1.2fr]">
+          <div>
+            <h2 className="text-3xl font-light text-purple-950">
+              O modelu {vehicle.name}
+            </h2>
+            <p className="mt-4 leading-7 text-purple-950/70">
+              {vehicle.tagline} Pro konkrétní parametry, cenu a dostupnost nás
+              kontaktujte — připravíme nabídku na míru.
+            </p>
+            <dl className="mt-8 space-y-4">
+              <div className="rounded-xl bg-lavender px-5 py-4">
+                <dt className="text-xs font-bold uppercase tracking-[0.12em] text-blue-700">
+                  Kategorie
+                </dt>
+                <dd className="mt-1 text-purple-950">{vehicle.category}</dd>
+              </div>
+              <div className="rounded-xl bg-lavender px-5 py-4">
+                <dt className="text-xs font-bold uppercase tracking-[0.12em] text-blue-700">
+                  Značka
+                </dt>
+                <dd className="mt-1 capitalize text-purple-950">
+                  {vehicle.brand}
+                </dd>
+              </div>
+            </dl>
+          </div>
+          <div className="rounded-[1.25rem] bg-lavender p-8">
+            <h3 className="text-2xl font-light text-purple-950">
+              Máte zájem o {vehicle.name}?
+            </h3>
+            <p className="mt-3 leading-7 text-purple-950/70">
+              Napište nám a specialista vás bude kontaktovat. Zajistíme
+              zkušební jízdu a připravíme osobní nabídku.
+            </p>
+            <div className="mt-6 rounded-xl bg-white p-5">
+              <p className="font-bold text-purple-950">
+                {companyInfo.contactPerson}
+              </p>
+              <p className="mt-1 text-sm text-purple-950/65">
+                Specialista prodeje
+              </p>
+              <a
+                href={`tel:${companyInfo.phone.replace(/\s/g, "")}`}
+                className="mt-3 inline-block font-bold text-blue-700 hover:underline"
+              >
+                {companyInfo.phone}
+              </a>
+            </div>
+            <ButtonLink href="/kontakt" variant="blue" className="mt-6">
+              Nezávazná poptávka
+            </ButtonLink>
+          </div>
+        </Container>
+      </section>
+
+      <PurchaseProcess />
+
+      <section className="site-section bg-lavender">
+        <Container className="max-w-3xl">
+          <h2 className="text-center text-3xl font-light text-purple-950">
+            Nezávazná poptávka vozu
+          </h2>
+          <div className="mt-8">
+            <InquiryForm variant="inquiry" vehicleName={vehicle.name} />
+          </div>
+        </Container>
+      </section>
+
+      <RelatedVehicles vehicles={related} />
+
       <CtaSection
         title={`Chcete se zeptat na ${vehicle.name}?`}
-        description="AI poradce zůstane u vozů a služeb Bez emisí. Chybějící ověřené údaje nebude odhadovat."
+        description="AI poradce vám pomůže s orientací. Závaznou nabídku vždy potvrdí specialista."
       />
     </>
   );

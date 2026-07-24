@@ -12,8 +12,7 @@ export default function NotFound() {
           Stránka nebyla nalezena
         </h1>
         <p className="mt-4 text-lg leading-8 text-purple-950/70">
-          Odkaz může být zastaralý, nebo stránka v tomto prototypu ještě
-          neexistuje.
+          Odkaz může být zastaralý nebo stránka již není dostupná.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <ButtonLink href="/" variant="blue">

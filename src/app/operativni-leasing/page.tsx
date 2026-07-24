@@ -15,7 +15,7 @@ export default function OperationalLeasePage() {
         eyebrow: "Operativní leasing",
         title: "Elektromobil bez starostí s vlastnictvím",
         description:
-          "Princip služby představujeme bez neověřených splátek a obchodních podmínek.",
+          "Elektromobil bez starostí s vlastnictvím — měsíční platba místo jednorázové investice.",
         introTitle: "Porovnávejte celý rozsah služby",
         intro:
           "Měsíční platba sama nestačí. Důležitá je délka smlouvy, nájezd, zahrnuté služby, pojištění i podmínky vrácení.",
@@ -29,8 +29,8 @@ export default function OperationalLeasePage() {
             text: "Podmínky musí odpovídat vašemu reálnému používání vozu.",
           },
           {
-            title: "Závazná kalkulace",
-            text: "Konkrétní částku a dostupnost musí potvrdit aktuální obchodní nabídka.",
+            title: "Osobní kalkulace",
+            text: "Připravíme nabídku na míru podle vašich požadavků a plánovaného nájezdu.",
           },
         ],
       }}

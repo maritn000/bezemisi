@@ -6,10 +6,11 @@ import { ButtonLink } from "./button";
 import { Container } from "./container";
 import { Logo } from "./logo";
 import { MobileNavigation } from "./mobile-navigation";
+import { ScrollHeader } from "./scroll-header";
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-50 border-b border-purple-950/5 bg-white/95 backdrop-blur">
+    <ScrollHeader>
       <Container className="flex h-[72px] items-center justify-between gap-6 lg:h-[92px]">
         <Logo />
         <nav
@@ -35,6 +36,6 @@ export function Header() {
         </ButtonLink>
         <MobileNavigation />
       </Container>
-    </header>
+    </ScrollHeader>
   );
 }

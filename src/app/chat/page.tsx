@@ -21,9 +21,9 @@ export default function ChatPage() {
             Ptejte se na elektromobily
           </h1>
           <p className="mt-4 text-lg leading-8 text-purple-950/70">
-            Poradce se drží vozů a služeb Bez emisí. V této fázi nemá připojená
-            ověřená katalogová data a konkrétní údaje nebude doplňovat z
-            paměti.
+            Poradce se drží vozů a služeb Bez emisí. Parametry, ceny a
+            dostupnost se mohou měnit — rozhodující je vždy potvrzení konkrétní
+            nabídky.
           </p>
         </div>
         <div className="mx-auto max-w-5xl">
@@ -34,11 +34,6 @@ export default function ChatPage() {
           >
             <ChatInterface />
           </Suspense>
-          <p className="mx-auto mt-5 max-w-3xl text-center text-sm leading-6 text-purple-950/65">
-            AI poradce odpovídá pouze k vozům a službám Bez emisí. Parametry,
-            ceny a dostupnost se mohou měnit; rozhodující je vždy potvrzení
-            konkrétní nabídky.
-          </p>
         </div>
       </div>
     </section>
