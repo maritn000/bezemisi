@@ -192,7 +192,17 @@ export async function runFullCatalogueIngestion(
 
       if (existingRun) {
         ingestionRunId = existingRun.id;
-        const persisted = existingRun.metadata as PersistedIngestionState;
+        const rawMetadata = existingRun.metadata as
+          | PersistedIngestionState
+          | FullIngestionSummary
+          | null;
+        const persisted: PersistedIngestionState =
+          rawMetadata &&
+          "discovered" in rawMetadata &&
+          "stored" in rawMetadata &&
+          !("summary" in rawMetadata)
+            ? { summary: rawMetadata }
+            : (rawMetadata as PersistedIngestionState) ?? {};
         if (persisted.summary) {
           Object.assign(summary, persisted.summary);
         }
