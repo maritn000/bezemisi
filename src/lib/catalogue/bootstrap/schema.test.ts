@@ -7,6 +7,7 @@ test("expected migration order starts with foundation then catalogue", () => {
   assert.deepEqual(EXPECTED_MIGRATION_TAGS, [
     "0000_redundant_wild_pack",
     "0001_woozy_expediter",
+    "0002_model_level_specs",
   ]);
 });
 
@@ -19,9 +20,9 @@ test("foundation migration contains no destructive statements", async () => {
   assert.doesNotMatch(sql, /TRUNCATE/i);
 });
 
-test("catalogue migration contains no destructive statements", async () => {
+test("model-level specs migration contains no destructive statements", async () => {
   const sql = await import("node:fs/promises").then((fs) =>
-    fs.readFile("drizzle/0001_woozy_expediter.sql", "utf8"),
+    fs.readFile("drizzle/0002_model_level_specs.sql", "utf8"),
   );
 
   assert.doesNotMatch(sql, /DROP\s+TABLE/i);

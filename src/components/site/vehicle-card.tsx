@@ -12,6 +12,8 @@ export function VehicleCard({
   tagline,
   rangeLabel,
   priceFrom,
+  priceLabel,
+  operatingCostLabel,
   observedAt,
 }: {
   name: string;
@@ -23,17 +25,20 @@ export function VehicleCard({
   rangeKm?: number | null;
   rangeLabel?: string | null;
   priceFrom?: number | null;
+  priceLabel?: string | null;
+  operatingCostLabel?: string | null;
   observedAt?: string | null;
 }) {
   const alt = imageAlt ?? name;
   const formattedPrice =
-    typeof priceFrom === "number"
-      ? new Intl.NumberFormat("cs-CZ", {
+    priceLabel ??
+    (typeof priceFrom === "number"
+      ? `Cena od ${new Intl.NumberFormat("cs-CZ", {
           style: "currency",
           currency: "CZK",
           maximumFractionDigits: 0,
-        }).format(priceFrom)
-      : null;
+        }).format(priceFrom)}`
+      : null);
 
   return (
     <article className="overflow-hidden rounded-[1.25rem] bg-white ring-1 ring-purple-950/8 transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_rgba(31,5,86,.08)]">
@@ -60,18 +65,24 @@ export function VehicleCard({
             {name}
           </Link>
         </h3>
-        {(rangeLabel || formattedPrice) && (
+        {(rangeLabel || formattedPrice || operatingCostLabel) && (
           <dl className="mt-4 space-y-2 text-sm text-purple-950/75">
             {rangeLabel && (
               <div>
-                <dt className="sr-only">Dojezd WLTP</dt>
+                <dt className="sr-only">Dojezd</dt>
                 <dd>{rangeLabel}</dd>
               </div>
             )}
             {formattedPrice && (
               <div>
-                <dt className="sr-only">Cena od</dt>
-                <dd>Cena od {formattedPrice}</dd>
+                <dt className="sr-only">Cena</dt>
+                <dd>{formattedPrice}</dd>
+              </div>
+            )}
+            {operatingCostLabel && (
+              <div>
+                <dt className="sr-only">Provozní náklady</dt>
+                <dd>{operatingCostLabel}</dd>
               </div>
             )}
             {observedAt && (
