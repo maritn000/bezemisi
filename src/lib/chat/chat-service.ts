@@ -20,6 +20,7 @@ import {
 import { CHAT_ERRORS } from "./errors";
 import {
   buildGroundedChatContext,
+  deduplicateVerifiedSources,
   mergeRetrievalResults,
   retrieveCommercialContext,
   retrieveVehicleContext,
@@ -31,6 +32,7 @@ import {
   getConfiguredChatModelName,
   isOpenAIConfigured,
 } from "./model-config";
+import { stripInternalIdentifiers } from "./output-safeguard";
 import { isClearlyOutOfScope } from "./scope";
 import { buildSystemPrompt, REFUSAL } from "./system-prompt";
 import type { ChatRequest } from "./validation";
@@ -59,13 +61,14 @@ function persistenceEnabled() {
 }
 
 function staticAssistantResponse(text: string, sources: VerifiedSource[] = []) {
+  const sanitizedText = stripInternalIdentifiers(text);
   const partId = crypto.randomUUID();
   const stream = createUIMessageStream<UIMessage>({
     execute({ writer }) {
       writer.write({ type: "text-start", id: partId });
-      writer.write({ type: "text-delta", id: partId, delta: text });
+      writer.write({ type: "text-delta", id: partId, delta: sanitizedText });
       writer.write({ type: "text-end", id: partId });
-      for (const source of sources) {
+      for (const source of deduplicateVerifiedSources(sources)) {
         if (!source.url) continue;
         writer.write({
           type: "source-url",
@@ -78,6 +81,22 @@ function staticAssistantResponse(text: string, sources: VerifiedSource[] = []) {
   });
 
   return createUIMessageStreamResponse({ stream });
+}
+
+function createOutputSafeguardTransform() {
+  return () =>
+    new TransformStream({
+      transform(chunk, controller) {
+        if (chunk.type === "text-delta" && typeof chunk.text === "string") {
+          controller.enqueue({
+            ...chunk,
+            text: stripInternalIdentifiers(chunk.text),
+          });
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    });
 }
 
 async function resolveConversationId(_requestedId?: string) {
@@ -152,7 +171,9 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
 
   // Never invent sources — only emit application retrieval results.
   const sourcesForUi = groundedContext.hasVerifiedContext
-    ? groundedContext.sources.filter((source) => Boolean(source.url))
+    ? deduplicateVerifiedSources(
+        groundedContext.sources.filter((source) => Boolean(source.url)),
+      )
     : [];
 
   const { model, temperature } = getChatModelConfig();
@@ -183,6 +204,7 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
   const result = streamText({
     model,
     temperature,
+    experimental_transform: createOutputSafeguardTransform(),
     system: buildSystemPrompt({
       context: groundedContext.content,
       sources: groundedContext.sources,
@@ -195,8 +217,8 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
         await messages.storeMessage({
           conversationId,
           role: "assistant",
-          content: text,
-          sources: groundedContext.sources,
+          content: stripInternalIdentifiers(text),
+          sources: sourcesForUi,
         });
       } catch (error) {
         logChatError({

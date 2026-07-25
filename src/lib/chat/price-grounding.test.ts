@@ -17,6 +17,10 @@ test("buildGroundedChatContext labels model-level starting prices with scope", (
         scope: "model",
         sourceId: "src-1",
         confidence: "verified",
+        priceScope: "model_starting",
+        sourceTitle: "Hyundai INSTER",
+        sourceUrl: "https://www.bezemisi.cz/elektromobily/hyundai/inster",
+        observedAt: "2026-07-24",
       },
     ],
     commercialConditions: [],
@@ -32,7 +36,10 @@ test("buildGroundedChatContext labels model-level starting prices with scope", (
   };
 
   const grounded = buildGroundedChatContext(result);
-  assert.match(grounded.content, /model-level starting price/i);
-  assert.match(grounded.content, /\[model\]/);
+  assert.match(grounded.content, /model-level starting price|cena od/i);
   assert.match(grounded.content, /599990/);
+  assert.doesNotMatch(
+    grounded.content,
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  );
 });

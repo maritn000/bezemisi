@@ -26,8 +26,35 @@ function safeSourceUrl(value: string) {
   }
 }
 
+function dedupeSources(
+  sources: Array<{
+    sourceId: string;
+    url: string;
+    title?: string;
+  }>,
+) {
+  const byUrl = new Map<string, (typeof sources)[number]>();
+  for (const source of sources) {
+    const href = safeSourceUrl(source.url);
+    if (!href) continue;
+    if (!byUrl.has(href)) {
+      byUrl.set(href, source);
+    }
+  }
+  return [...byUrl.values()];
+}
+
+function formatSourceTitle(title: string | undefined, href: string) {
+  if (title?.trim()) {
+    return title.trim().replace(/\s+/g, " ");
+  }
+  return new URL(href).hostname;
+}
+
 function MessageContent({ message }: { message: UIMessage }) {
-  const sources = message.parts.filter((part) => part.type === "source-url");
+  const sources = dedupeSources(
+    message.parts.filter((part) => part.type === "source-url"),
+  );
 
   return (
     <>
@@ -54,7 +81,7 @@ function MessageContent({ message }: { message: UIMessage }) {
                     rel="noreferrer"
                     className="underline underline-offset-2"
                   >
-                    {source.title || new URL(href).hostname}
+                    {formatSourceTitle(source.title, href)}
                     <span className="sr-only"> (otevře se v novém okně)</span>
                   </a>
                 </li>

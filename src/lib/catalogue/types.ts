@@ -153,8 +153,12 @@ export type CatalogueOffer = {
   id: string;
   title: string;
   currentPrice: number | null;
+  listPrice: number | null;
   currency: string;
   availabilityStatus: string;
+  offerType: string;
+  condition: string;
+  mileageKm: number | null;
   observedAt: string;
   offerUrl: string | null;
   source: SourceReference;

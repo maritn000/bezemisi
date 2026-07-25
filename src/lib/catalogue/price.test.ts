@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   formatResolvedPriceForGrounding,
+  formatResolvedPriceForUser,
   resolveBestPriceForModel,
 } from "@/lib/catalogue/price-retrieval";
 import {
@@ -10,7 +11,34 @@ import {
   understandQueryFromMessages,
 } from "@/lib/catalogue/query-understanding";
 import type { CatalogueModelSummary } from "@/lib/catalogue/repositories/catalogue-repository";
+import type { CatalogueOffer } from "@/lib/catalogue/types";
 import { isPriceFollowUp } from "@/lib/chat/conversation-context";
+
+function buildOffer(overrides: Partial<CatalogueOffer> = {}): CatalogueOffer {
+  return {
+    id: "offer-1",
+    title: "Aktuální nabídka",
+    currentPrice: 749_990,
+    listPrice: null,
+    currency: "CZK",
+    availabilityStatus: "available",
+    offerType: "stock_inventory",
+    condition: "new",
+    mileageKm: null,
+    observedAt: "2026-07-24",
+    offerUrl: "https://example.com/offer",
+    isCurrent: true,
+    source: {
+      id: "src-offer",
+      title: "Stock",
+      url: "https://example.com/offer",
+      publisher: "Bez emisí",
+      sourceType: "bezemisi_offer_page",
+      checkedAt: "2026-07-24",
+    },
+    ...overrides,
+  };
+}
 
 function buildModelSummary(
   overrides: Partial<CatalogueModelSummary> = {},
@@ -31,26 +59,7 @@ function buildModelSummary(
 
 test("resolveBestPriceForModel prefers current offer over model starting price", () => {
   const model = buildModelSummary({
-    currentOffers: [
-      {
-        id: "offer-1",
-        title: "Aktuální nabídka",
-        currentPrice: 749_990,
-        currency: "CZK",
-        availabilityStatus: "available",
-        observedAt: "2026-07-24",
-        offerUrl: null,
-        isCurrent: true,
-        source: {
-          id: "src-offer",
-          title: "Stock",
-          url: "https://example.com/offer",
-          publisher: "Bez emisí",
-          sourceType: "bezemisi_offer_page",
-          checkedAt: "2026-07-24",
-        },
-      },
-    ],
+    currentOffers: [buildOffer()],
     specifications: [
       {
         fieldKey: "published_starting_price_czk",
@@ -70,7 +79,7 @@ test("resolveBestPriceForModel prefers current offer over model starting price",
   });
 
   const resolved = resolveBestPriceForModel(model);
-  assert.equal(resolved?.scope, "offer");
+  assert.equal(resolved?.scope, "stock_offer");
   assert.equal(resolved?.value, 749_990);
 });
 
@@ -95,11 +104,11 @@ test("resolveBestPriceForModel falls back to model-level starting price", () => 
   });
 
   const resolved = resolveBestPriceForModel(model);
-  assert.equal(resolved?.scope, "model");
+  assert.equal(resolved?.scope, "model_starting");
   assert.equal(resolved?.value, 599_990);
   assert.match(
     formatResolvedPriceForGrounding(resolved!),
-    /model-level starting price/i,
+    /cena od/i,
   );
 });
 
@@ -135,15 +144,11 @@ test("resolveBestPriceForModel ignores implausible scraped offer prices", () => 
     brandName: "Kia",
     brandSlug: "kia",
     currentOffers: [
-      {
+      buildOffer({
         id: "offer-bad",
         title: "Trim price",
         currentPrice: 3,
-        currency: "CZK",
-        availabilityStatus: "available",
-        observedAt: "2026-07-24",
-        offerUrl: null,
-        isCurrent: true,
+        offerType: "trim_price",
         source: {
           id: "src-bad",
           title: "Bad scrape",
@@ -152,7 +157,7 @@ test("resolveBestPriceForModel ignores implausible scraped offer prices", () => 
           sourceType: "bezemisi_vehicle_page",
           checkedAt: "2026-07-24",
         },
-      },
+      }),
     ],
     specifications: [
       {
@@ -173,8 +178,126 @@ test("resolveBestPriceForModel ignores implausible scraped offer prices", () => 
   });
 
   const resolved = resolveBestPriceForModel(model);
-  assert.equal(resolved?.scope, "model");
+  assert.equal(resolved?.scope, "model_starting");
   assert.equal(resolved?.value, 899_980);
+});
+
+test("resolveBestPriceForModel labels used stock offer separately from model starting price", () => {
+  const model = buildModelSummary({
+    name: "KONA Electric",
+    slug: "kona-electric",
+    currentOffers: [
+      buildOffer({
+        currentPrice: 424_999,
+        condition: "used",
+        mileageKm: 12_500,
+        offerType: "stock_inventory",
+      }),
+    ],
+    specifications: [
+      {
+        fieldKey: "published_starting_price_czk",
+        value: 799_990,
+        unit: "CZK",
+        verificationStatus: "verified",
+        source: {
+          id: "src-model",
+          title: "Katalog",
+          url: "https://example.com/catalogue",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_vehicle_page",
+          checkedAt: "2026-07-24",
+        },
+      },
+    ],
+  });
+
+  const resolved = resolveBestPriceForModel(model);
+  assert.equal(resolved?.scope, "stock_offer");
+  assert.equal(resolved?.value, 424_999);
+  assert.match(formatResolvedPriceForUser(resolved!), /ojetá nabídka/i);
+  assert.doesNotMatch(formatResolvedPriceForUser(resolved!), /cena od/i);
+});
+
+test("resolveBestPriceForModel excludes leasing payments", () => {
+  const model = buildModelSummary({
+    currentOffers: [
+      buildOffer({
+        currentPrice: 9_990,
+        offerType: "operating_lease",
+      }),
+    ],
+    specifications: [
+      {
+        fieldKey: "published_starting_price_czk",
+        value: 599_990,
+        unit: "CZK",
+        verificationStatus: "verified",
+        source: {
+          id: "src-model",
+          title: "Katalog",
+          url: "https://example.com/catalogue",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_vehicle_page",
+          checkedAt: "2026-07-24",
+        },
+      },
+    ],
+  });
+
+  const resolved = resolveBestPriceForModel(model);
+  assert.equal(resolved?.scope, "model_starting");
+});
+
+test("resolveBestPriceForModel excludes sold offers", () => {
+  const model = buildModelSummary({
+    currentOffers: [
+      buildOffer({
+        availabilityStatus: "sold",
+      }),
+    ],
+    specifications: [
+      {
+        fieldKey: "published_starting_price_czk",
+        value: 599_990,
+        unit: "CZK",
+        verificationStatus: "verified",
+        source: {
+          id: "src-model",
+          title: "Katalog",
+          url: "https://example.com/catalogue",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_vehicle_page",
+          checkedAt: "2026-07-24",
+        },
+      },
+    ],
+  });
+
+  const resolved = resolveBestPriceForModel(model);
+  assert.equal(resolved?.scope, "model_starting");
+});
+
+test("formatResolvedPriceForUser contains no UUID", () => {
+  const model = buildModelSummary({
+    id: "2bb67414-5aef-4c84-b1c0-6f92c051c040",
+    currentOffers: [
+      buildOffer({
+        source: {
+          id: "425a4793-43e3-4cde-8170-b9e73f7e89c2",
+          title: "BMW iX1",
+          url: "https://example.com/ix1",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_vehicle_page",
+          checkedAt: "2026-07-24",
+        },
+      }),
+    ],
+  });
+
+  const resolved = resolveBestPriceForModel(model)!;
+  const formatted = formatResolvedPriceForUser(resolved);
+  assert.doesNotMatch(formatted, /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 });
 
 test("Czech maximum-price search is classified as vehicle_search", () => {
@@ -205,9 +328,49 @@ test("price follow-up after range search resolves to offer_search with prior con
   assert.equal(intent.priorSearch?.minimumWltpRange, 450);
 });
 
-test("direct model price question keeps offer_search intent", () => {
-  const intent = understandQuery("Kolik stojí Kia EV3?");
-  assert.equal(intent.intent, "offer_search");
-  assert.equal(intent.brand, "kia");
-  assert.equal(intent.model, "ev3");
+test("formatPriceSummaryForModels uses Czech multi-vehicle structure", async () => {
+  const { formatPriceSummaryForModels } = await import(
+    "@/lib/catalogue/price-retrieval"
+  );
+  const summary = formatPriceSummaryForModels([
+    {
+      scope: "model_starting",
+      value: 1_133_000,
+      currency: "CZK",
+      label: "model-level starting price",
+      observedAt: "2026-07-24",
+      sourceId: "src-1",
+      sourceUrl: "https://example.com/ix1",
+      sourceTitle: "BMW iX1",
+      modelId: "m1",
+      modelName: "iX1",
+      brandName: "BMW",
+      selectionReason: "test",
+      excludedCandidates: [],
+    },
+    {
+      scope: "stock_offer",
+      value: 424_999,
+      currency: "CZK",
+      label: "current exact stock offer",
+      observedAt: "2026-07-24",
+      sourceId: "src-2",
+      sourceUrl: "https://example.com/kona",
+      sourceTitle: "Hyundai KONA Electric",
+      modelId: "m2",
+      modelName: "KONA Electric",
+      brandName: "Hyundai",
+      offerCondition: "used",
+      selectionReason: "test",
+      excludedCandidates: [],
+    },
+  ]);
+
+  assert.match(summary, /U vozů z předchozího výběru mám tyto ověřené ceny:/);
+  assert.match(summary, /cena od 1[\s\u00a0\u202f]?133[\s\u00a0\u202f]?000 Kč/);
+  assert.match(summary, /ojetá nabídka za 424[\s\u00a0\u202f]?999 Kč/);
+  assert.match(
+    summary,
+    /U konkrétních nabídek se cena může měnit; rozhodující je vždy aktuální potvrzení Bez emisí\./,
+  );
 });

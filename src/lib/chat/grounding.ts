@@ -1,5 +1,6 @@
 import "server-only";
 
+import { normalizeVehicleTitle } from "@/lib/catalogue/source-title";
 import {
   compareVehicles,
   getCommercialConditionsTool,
@@ -8,9 +9,13 @@ import {
   searchVehicles,
 } from "@/lib/catalogue/catalogue-service";
 import {
+  buildPriceLookupDiagnostic,
+  formatPriceSummaryForModels,
   formatResolvedPriceForGrounding,
   resolveBestPriceForModel,
   resolvedPriceToFact,
+  type PriceLookupDiagnostic,
+  type ResolvedPrice,
 } from "@/lib/catalogue/price-retrieval";
 import {
   getModelSummariesByIds,
@@ -51,6 +56,12 @@ export type VerifiedFact = {
   scope?: "model" | "variant" | "offer";
   sourceId: string;
   confidence: "verified";
+  priceScope?: string;
+  sourceUrl?: string | null;
+  sourceTitle?: string;
+  observedAt?: string;
+  offerCondition?: string | null;
+  selectionReason?: string;
 };
 
 export type RetrievalResult = {
@@ -62,6 +73,8 @@ export type RetrievalResult = {
   conflicts?: string[];
   ambiguityMessage?: string;
   catalogueContext?: CatalogueConversationContext | null;
+  priceSummary?: string;
+  priceDiagnostics?: PriceLookupDiagnostic[];
 };
 
 function emptyRetrieval(): RetrievalResult {
@@ -94,6 +107,9 @@ function variantFacts(variant: CatalogueVariantSummary): VerifiedFact[] {
     vehicleId: variant.id,
     sourceId: spec.source.id,
     confidence: "verified" as const,
+    sourceUrl: spec.source.url,
+    sourceTitle: spec.source.title,
+    observedAt: spec.source.checkedAt,
   }));
 }
 
@@ -108,6 +124,10 @@ function variantOfferFacts(variant: CatalogueVariantSummary): VerifiedFact[] {
         vehicleId: variant.id,
         sourceId: offer.source.id,
         confidence: "verified",
+        sourceUrl: offer.offerUrl ?? offer.source.url,
+        sourceTitle: offer.source.title,
+        observedAt: offer.observedAt,
+        offerCondition: offer.condition,
       });
     }
     facts.push({
@@ -116,6 +136,10 @@ function variantOfferFacts(variant: CatalogueVariantSummary): VerifiedFact[] {
       vehicleId: variant.id,
       sourceId: offer.source.id,
       confidence: "verified",
+      sourceUrl: offer.offerUrl ?? offer.source.url,
+      sourceTitle: offer.source.title,
+      observedAt: offer.observedAt,
+      offerCondition: offer.condition,
     });
     return facts;
   });
@@ -163,6 +187,20 @@ function buildVariantContext(variants: CatalogueVariantSummary[]) {
   };
 }
 
+function resolveSourceUrl(
+  resolved: ResolvedPrice,
+  model: Awaited<ReturnType<typeof getModelSummariesByIds>>[number],
+) {
+  if (resolved.sourceUrl) {
+    return resolved.sourceUrl;
+  }
+
+  const matchingSpec = model.specifications.find(
+    (spec) => spec.source.id === resolved.sourceId,
+  );
+  return matchingSpec?.source.url ?? null;
+}
+
 async function buildPriceContextForModels(
   modelSummaries: Awaited<ReturnType<typeof getModelSummariesByIds>>,
   variantsByModel = new Map<string, CatalogueVariantSummary[]>(),
@@ -170,26 +208,42 @@ async function buildPriceContextForModels(
   const facts: VerifiedFact[] = [];
   const sources: VerifiedSource[] = [];
   const priceLines: string[] = [];
+  const resolvedPrices: ResolvedPrice[] = [];
+  const diagnostics: PriceLookupDiagnostic[] = [];
 
   for (const model of modelSummaries) {
     const variants =
       variantsByModel.get(model.id) ??
-      (await getVehicleDetails({
-        brand: model.brandSlug,
-        model: model.slug,
-      })).variants;
+      (
+        await getVehicleDetails({
+          brand: model.brandSlug,
+          model: model.slug,
+        })
+      ).variants;
     const resolved = resolveBestPriceForModel(model, variants);
-    if (!resolved) continue;
+    diagnostics.push(buildPriceLookupDiagnostic(model, resolved));
 
+    if (!resolved) {
+      priceLines.push(
+        `- ${normalizeVehicleTitle(model.brandName, model.name)}: ověřenou aktuální cenu zatím nemám (žádná ověřená modelová, variantní ani aktuální nabídková cena).`,
+      );
+      continue;
+    }
+
+    resolvedPrices.push(resolved);
     facts.push(resolvedPriceToFact(resolved));
     priceLines.push(formatResolvedPriceForGrounding(resolved));
     sources.push({
       id: resolved.sourceId,
-      title: `${model.brandName} ${model.name}`,
-      url: model.specifications.find((spec) => spec.source.id === resolved.sourceId)
-        ?.source.url ?? null,
+      title: resolved.sourceTitle,
+      url: resolveSourceUrl(resolved, model),
       checkedAt: resolved.observedAt,
-      sourceType: resolved.scope === "offer" ? "offer" : "catalogue",
+      sourceType:
+        resolved.scope === "stock_offer" ||
+        resolved.scope === "action_price" ||
+        resolved.scope === "variant_offer"
+          ? "offer"
+          : "catalogue",
       vehicleId: resolved.variantId ?? resolved.modelId,
     });
   }
@@ -198,7 +252,10 @@ async function buildPriceContextForModels(
     facts,
     sources,
     priceLines,
-    hasVerifiedContext: facts.length > 0,
+    resolvedPrices,
+    diagnostics,
+    priceSummary: formatPriceSummaryForModels(resolvedPrices),
+    hasVerifiedContext: facts.length > 0 || priceLines.length > 0,
   };
 }
 
@@ -269,15 +326,15 @@ async function resolveModelsForPriorSearch(
 }
 
 function formatVariantLabel(variant: CatalogueVariantSummary) {
-  return `${variant.brandName} ${variant.modelName} – ${variant.name}`;
+  return `${normalizeVehicleTitle(variant.brandName, variant.modelName)} – ${variant.name}`;
 }
 
 function formatVariantSection(variant: CatalogueVariantSummary) {
   const lines = [
-    `VARIANTA: ${formatVariantLabel(variant)} [${variant.id}]`,
+    `VARIANTA: ${formatVariantLabel(variant)}`,
     ...variant.specifications.map(
       (spec) =>
-        `- ${spec.fieldKey}: ${String(spec.value)}${spec.unit ? ` ${spec.unit}` : ""} [zdroj ${spec.source.id}]`,
+        `- ${spec.fieldKey}: ${String(spec.value)}${spec.unit ? ` ${spec.unit}` : ""} (zdroj: ${spec.source.title}${spec.source.url ? `, ${spec.source.url}` : ""})`,
     ),
   ];
 
@@ -285,7 +342,7 @@ function formatVariantSection(variant: CatalogueVariantSummary) {
     lines.push("AKTUÁLNÍ NABÍDKY:");
     for (const offer of variant.currentOffers) {
       lines.push(
-        `- ${offer.title}: ${offer.currentPrice ?? "cena neuvedena"} ${offer.currency}, dostupnost ${offer.availabilityStatus}, pozorováno ${offer.observedAt} [zdroj ${offer.source.id}]`,
+        `- ${offer.title}: ${offer.currentPrice ?? "cena neuvedena"} ${offer.currency}, dostupnost ${offer.availabilityStatus}, stav ${offer.condition}, pozorováno ${offer.observedAt} (zdroj: ${offer.source.title}${offer.source.url ? `, ${offer.source.url}` : ""})`,
       );
     }
   }
@@ -299,6 +356,45 @@ function formatVariantSection(variant: CatalogueVariantSummary) {
   }
 
   return lines.join("\n");
+}
+
+export function deduplicateVerifiedSources(sources: VerifiedSource[]) {
+  const byUrl = new Map<string, VerifiedSource>();
+  const withoutUrl: VerifiedSource[] = [];
+
+  for (const source of sources) {
+    const normalizedTitle = source.title.trim().replace(/\s+/g, " ");
+    const normalizedSource = {
+      ...source,
+      title: normalizedTitle,
+    };
+
+    if (!source.url) {
+      withoutUrl.push(normalizedSource);
+      continue;
+    }
+
+    const existing = byUrl.get(source.url);
+    if (!existing) {
+      byUrl.set(source.url, normalizedSource);
+      continue;
+    }
+
+    if (!existing.checkedAt && normalizedSource.checkedAt) {
+      byUrl.set(source.url, normalizedSource);
+    }
+  }
+
+  const deduped = [...byUrl.values(), ...withoutUrl];
+  const seenTitles = new Set<string>();
+  return deduped.filter((source) => {
+    const key = source.title.toLowerCase();
+    if (seenTitles.has(key) && source.url) {
+      return false;
+    }
+    seenTitles.add(key);
+    return true;
+  });
 }
 
 export async function retrieveVehicleContext(
@@ -376,6 +472,13 @@ export async function retrieveVehicleContext(
           scope: "model" as const,
           sourceId: spec.source.id,
           confidence: "verified" as const,
+          sourceUrl: spec.source.url,
+          sourceTitle: normalizeVehicleTitle(
+            model.brandName,
+            model.name,
+            spec.source.title,
+          ),
+          observedAt: spec.source.checkedAt,
         })),
       );
 
@@ -431,7 +534,11 @@ export async function retrieveVehicleContext(
         ...publishedModels.flatMap((model) =>
           model.specifications.map((spec) => ({
             id: spec.source.id,
-            title: spec.source.title,
+            title: normalizeVehicleTitle(
+              model.brandName,
+              model.name,
+              spec.source.title,
+            ),
             url: spec.source.url,
             checkedAt: spec.source.checkedAt,
             sourceType: spec.source.sourceType,
@@ -445,7 +552,7 @@ export async function retrieveVehicleContext(
 
       return {
         facts: [...context.facts, ...modelFacts, ...priceContext.facts],
-        sources: [...sourcesById.values()],
+        sources: deduplicateVerifiedSources([...sourcesById.values()]),
         commercialConditions: [],
         hasVerifiedContext:
           context.hasVerifiedContext ||
@@ -458,6 +565,8 @@ export async function retrieveVehicleContext(
             ? "U některých modelů jsou k dispozici pouze modelové marketingové hodnoty (např. dojezd až X km). Konkrétní dojezd závisí na variantě."
             : undefined,
         catalogueContext,
+        priceSummary: priceContext.priceSummary,
+        priceDiagnostics: priceContext.diagnostics,
       };
     }
 
@@ -468,7 +577,7 @@ export async function retrieveVehicleContext(
       const context = buildVariantContext(comparison.variants);
       return {
         facts: context.facts,
-        sources: context.sources,
+        sources: deduplicateVerifiedSources(context.sources),
         commercialConditions: [],
         hasVerifiedContext: context.hasVerifiedContext,
         missingFields: context.missingFields,
@@ -487,12 +596,14 @@ export async function retrieveVehicleContext(
         if (priceContext.hasVerifiedContext) {
           return {
             facts: priceContext.facts,
-            sources: priceContext.sources,
+            sources: deduplicateVerifiedSources(priceContext.sources),
             commercialConditions: [],
             hasVerifiedContext: true,
             catalogueContext: extractCatalogueContextFromRetrieval({
               modelIds: enrichedIntent.modelIds,
             }),
+            priceSummary: priceContext.priceSummary,
+            priceDiagnostics: priceContext.diagnostics,
           };
         }
       }
@@ -503,13 +614,15 @@ export async function retrieveVehicleContext(
         if (priceContext.hasVerifiedContext) {
           return {
             facts: priceContext.facts,
-            sources: priceContext.sources,
+            sources: deduplicateVerifiedSources(priceContext.sources),
             commercialConditions: [],
             hasVerifiedContext: true,
             catalogueContext: extractCatalogueContextFromRetrieval({
               modelIds: models.map((model) => model.id),
               targetModels: enrichedIntent.targetModels,
             }),
+            priceSummary: priceContext.priceSummary,
+            priceDiagnostics: priceContext.diagnostics,
           };
         }
       }
@@ -525,13 +638,15 @@ export async function retrieveVehicleContext(
         if (priceContext.hasVerifiedContext) {
           return {
             facts: priceContext.facts,
-            sources: priceContext.sources,
+            sources: deduplicateVerifiedSources(priceContext.sources),
             commercialConditions: [],
             hasVerifiedContext: true,
             catalogueContext: extractCatalogueContextFromRetrieval({
               modelIds: models.map((model) => model.id),
               priorSearch: enrichedIntent.priorSearch,
             }),
+            priceSummary: priceContext.priceSummary,
+            priceDiagnostics: priceContext.diagnostics,
           };
         }
       }
@@ -567,10 +682,12 @@ export async function retrieveVehicleContext(
         if (priceContext.hasVerifiedContext) {
           return {
             facts: priceContext.facts,
-            sources: priceContext.sources,
+            sources: deduplicateVerifiedSources(priceContext.sources),
             commercialConditions: [],
             hasVerifiedContext: true,
             ambiguityMessage: details.ambiguityMessage,
+            priceSummary: priceContext.priceSummary,
+            priceDiagnostics: priceContext.diagnostics,
           };
         }
 
@@ -582,7 +699,7 @@ export async function retrieveVehicleContext(
       const context = buildVariantContext(details.variants);
       return {
         facts: context.facts,
-        sources: context.sources,
+        sources: deduplicateVerifiedSources(context.sources),
         commercialConditions: [],
         hasVerifiedContext: context.hasVerifiedContext,
         missingFields: context.missingFields,
@@ -621,16 +738,21 @@ export async function retrieveCommercialContext(
         value: condition.content,
         sourceId: condition.source.id,
         confidence: "verified",
+        sourceUrl: condition.source.url,
+        sourceTitle: condition.source.title,
+        observedAt: condition.source.checkedAt,
       }),
     );
 
     return {
       facts: [],
       commercialConditions,
-      sources: conditions.map((condition: CommercialConditionResult) => ({
-        ...toVerifiedSource(condition.source),
-        commercialCondition: condition.conditionType,
-      })),
+      sources: deduplicateVerifiedSources(
+        conditions.map((condition: CommercialConditionResult) => ({
+          ...toVerifiedSource(condition.source),
+          commercialCondition: condition.conditionType,
+        })),
+      ),
       hasVerifiedContext: true,
     };
   } catch (error) {
@@ -639,25 +761,39 @@ export async function retrieveCommercialContext(
   }
 }
 
+function formatFactForPrompt(fact: VerifiedFact) {
+  const unit = fact.unit ? ` ${fact.unit}` : "";
+  const scope = fact.priceScope
+    ? `, rozsah ceny: ${fact.priceScope}`
+    : fact.scope
+      ? `, úroveň: ${fact.scope}`
+      : "";
+  const source = fact.sourceTitle
+    ? `, zdroj: ${fact.sourceTitle}${fact.sourceUrl ? ` (${fact.sourceUrl})` : ""}`
+    : "";
+  const observed = fact.observedAt ? `, pozorováno ${fact.observedAt}` : "";
+  const condition = fact.offerCondition ? `, stav vozu: ${fact.offerCondition}` : "";
+
+  return `- ${fact.field}: ${String(fact.value)}${unit}${scope}${condition}${observed}${source}`;
+}
+
 export function formatSourceReferences(result: RetrievalResult): string {
-  if (result.sources.length === 0) {
+  const sources = deduplicateVerifiedSources(result.sources);
+  if (sources.length === 0) {
     return "";
   }
 
-  return result.sources
-    .map((source) => {
+  return sources
+    .map((source, index) => {
       const checked = source.checkedAt
         ? `ověřeno ${source.checkedAt}`
         : "datum ověření neuvedeno";
       const url = source.url ? `; ${source.url}` : "";
       const type = source.sourceType ? `; typ ${source.sourceType}` : "";
-      const vehicle = source.vehicleId
-        ? `; vozidlo ${source.vehicleId}`
-        : "";
       const commercial = source.commercialCondition
         ? `; podmínka ${source.commercialCondition}`
         : "";
-      return `- [${source.id}] ${source.title}; ${checked}${url}${type}${vehicle}${commercial}`;
+      return `- Zdroj ${index + 1}: ${source.title}; ${checked}${url}${type}${commercial}`;
     })
     .join("\n");
 }
@@ -666,7 +802,7 @@ export function buildGroundedChatContext(result: RetrievalResult) {
   if (result.ambiguityMessage && result.facts.length === 0) {
     return {
       content: `UPŘESNĚNÍ: ${result.ambiguityMessage}`,
-      sources: result.sources,
+      sources: deduplicateVerifiedSources(result.sources),
       hasVerifiedContext: true,
       sourceReferencesText: formatSourceReferences(result),
     };
@@ -683,25 +819,21 @@ export function buildGroundedChatContext(result: RetrievalResult) {
   }
 
   const sections = [
+    result.priceSummary &&
+      `OVĚŘENÉ CENY (POUŽIJ PŘESNĚ TUTO FORMULACI PRO KAŽDÝ MODEL):\n${result.priceSummary}`,
+    result.priceDiagnostics?.length
+      ? `INTERNÍ DIAGNOSTIKA CEN (NEUVÁDĚT UŽIVATELI):\n${result.priceDiagnostics
+          .map(
+            (row) =>
+              `- ${row.brandName} ${row.model}: nalezeno=${row.priceFound}; cena=${row.chosenPrice ?? "žádná"}; rozsah=${row.priceScope}; zdroj=${row.sourceUrl ?? "neuveden"}; vyloučené=${row.excludedPriceRows.length}`,
+          )
+          .join("\n")}`
+      : null,
     result.facts.length > 0 &&
-      `OVĚŘENÁ DATA O VOZECH:\n${result.facts
-        .map((fact) => {
-          const unit = fact.unit ? ` ${fact.unit}` : "";
-          const scope = fact.scope ? ` [${fact.scope}]` : "";
-          const vehicle = fact.vehicleId
-            ? ` (varianta ${fact.vehicleId})`
-            : fact.modelId
-              ? ` (model ${fact.modelId})`
-              : "";
-          return `- ${fact.field}: ${String(fact.value)}${unit}${scope}${vehicle} [zdroj ${fact.sourceId}]`;
-        })
-        .join("\n")}`,
+      `OVĚŘENÁ DATA O VOZECH:\n${result.facts.map(formatFactForPrompt).join("\n")}`,
     result.commercialConditions.length > 0 &&
       `OVĚŘENÉ OBCHODNÍ PODMÍNKY:\n${result.commercialConditions
-        .map(
-          (fact) =>
-            `- ${fact.field}: ${String(fact.value)} [zdroj ${fact.sourceId}]`,
-        )
+        .map(formatFactForPrompt)
         .join("\n")}`,
     result.missingFields && result.missingFields.length > 0
       ? `CHYBĚJÍCÍ OVĚŘENÁ POLE: ${result.missingFields.join(", ")}`
@@ -716,7 +848,7 @@ export function buildGroundedChatContext(result: RetrievalResult) {
     content:
       sections.join("\n\n") ||
       `OVĚŘENÝ KONTEXT JE PRÁZDNÝ. ${CHAT_ERRORS.missingVerifiedData}`,
-    sources: result.sources,
+    sources: deduplicateVerifiedSources(result.sources),
     hasVerifiedContext: true,
     sourceReferencesText: formatSourceReferences(result),
   };
@@ -734,7 +866,7 @@ export function mergeRetrievalResults(
   return {
     facts: [...vehicle.facts],
     commercialConditions: [...commercial.commercialConditions],
-    sources: [...sourcesById.values()],
+    sources: deduplicateVerifiedSources([...sourcesById.values()]),
     hasVerifiedContext:
       vehicle.hasVerifiedContext || commercial.hasVerifiedContext,
     missingFields: [
@@ -745,6 +877,8 @@ export function mergeRetrievalResults(
     ],
     ambiguityMessage: vehicle.ambiguityMessage ?? commercial.ambiguityMessage,
     catalogueContext: vehicle.catalogueContext ?? commercial.catalogueContext,
+    priceSummary: vehicle.priceSummary ?? commercial.priceSummary,
+    priceDiagnostics: vehicle.priceDiagnostics ?? commercial.priceDiagnostics,
   };
 }
 
