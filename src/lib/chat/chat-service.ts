@@ -8,6 +8,10 @@ import {
   type UIMessage,
 } from "ai";
 
+import {
+  buildCatalogueContextPart,
+  CATALOGUE_CONTEXT_PART_TYPE,
+} from "./conversation-context";
 import { getConversationRepository } from "./conversation-repository";
 import {
   categorizeProviderError,
@@ -30,6 +34,25 @@ import {
 import { isClearlyOutOfScope } from "./scope";
 import { buildSystemPrompt, REFUSAL } from "./system-prompt";
 import type { ChatRequest } from "./validation";
+
+function mapMessagesForRetrieval(messages: ChatRequest["messages"]) {
+  return messages.map((message) => ({
+    role: message.role,
+    parts: message.parts.map((part) => {
+      if (
+        message.role === "assistant" &&
+        part.type === CATALOGUE_CONTEXT_PART_TYPE
+      ) {
+        return part;
+      }
+
+      return {
+        text: "text" in part && typeof part.text === "string" ? part.text : "",
+        ...(typeof part.type === "string" ? { type: part.type } : {}),
+      };
+    }),
+  }));
+}
 
 function persistenceEnabled() {
   return getConversationRepository().enabled;
@@ -117,17 +140,15 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
 
   const [vehicleContext, commercialContext] = await Promise.all([
     retrieveVehicleContext(query, {
-      messages: parsedBody.messages.map((message) => ({
-        role: message.role,
-        parts: message.parts.map((part) => ({
-          text: "text" in part && typeof part.text === "string" ? part.text : "",
-        })),
-      })),
+      messages: mapMessagesForRetrieval(parsedBody.messages),
     }),
     retrieveCommercialContext(query),
   ]);
   const retrieval = mergeRetrievalResults(vehicleContext, commercialContext);
   const groundedContext = buildGroundedChatContext(retrieval);
+  const catalogueContextPart = retrieval.catalogueContext
+    ? buildCatalogueContextPart(retrieval.catalogueContext)
+    : null;
 
   // Never invent sources — only emit application retrieval results.
   const sourcesForUi = groundedContext.hasVerifiedContext
@@ -190,7 +211,7 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
     },
   });
 
-  if (sourcesForUi.length === 0) {
+  if (sourcesForUi.length === 0 && !catalogueContextPart) {
     return result.toUIMessageStreamResponse({
       onError(error) {
         logStreamError(error);
@@ -209,6 +230,9 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
           },
         }),
       );
+      if (catalogueContextPart) {
+        writer.write(catalogueContextPart);
+      }
       for (const source of sourcesForUi) {
         writer.write({
           type: "source-url",

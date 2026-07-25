@@ -5,6 +5,13 @@ import type { CatalogueVariantSummary, VerifiedSpecification } from "./types";
 
 export type PriceScope = "offer" | "variant" | "model" | "unavailable";
 
+/** Ignore scraped offer rows that are clearly not full vehicle prices (e.g. lease monthly). */
+export const MIN_PLAUSIBLE_VEHICLE_PRICE_CZK = 50_000;
+
+function isPlausibleVehicleOfferPrice(price: number | null) {
+  return typeof price === "number" && price >= MIN_PLAUSIBLE_VEHICLE_PRICE_CZK;
+}
+
 export type ResolvedPrice = {
   scope: PriceScope;
   value: number | null;
@@ -32,7 +39,7 @@ export function resolveBestPriceForModel(
   variants: CatalogueVariantSummary[] = [],
 ): ResolvedPrice | null {
   const modelOffers = model.currentOffers
-    .filter((offer) => offer.currentPrice !== null)
+    .filter((offer) => isPlausibleVehicleOfferPrice(offer.currentPrice))
     .sort((left, right) => Number(left.currentPrice) - Number(right.currentPrice));
 
   if (modelOffers.length > 0) {
@@ -54,7 +61,7 @@ export function resolveBestPriceForModel(
   const variantOffers = variants
     .flatMap((variant) =>
       variant.currentOffers
-        .filter((offer) => offer.currentPrice !== null)
+        .filter((offer) => isPlausibleVehicleOfferPrice(offer.currentPrice))
         .map((offer) => ({ variant, offer })),
     )
     .sort(

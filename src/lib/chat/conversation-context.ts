@@ -12,7 +12,7 @@ export type CatalogueConversationContext = {
 
 type ConversationMessage = {
   role: "user" | "assistant";
-  parts: Array<{ text?: string; type?: string; [key: string]: unknown }>;
+  parts: Array<{ text?: string; type?: string; data?: unknown; [key: string]: unknown }>;
 };
 
 const CATALOGUE_CONTEXT_PART_TYPE = "data-catalogue-context";
@@ -160,6 +160,33 @@ export function resolveConversationContext(
   return { priorSearch };
 }
 
+export function extractCatalogueContextFromRetrieval(input: {
+  modelIds?: string[];
+  variantIds?: string[];
+  targetModels?: Array<{ brand: string; model: string }>;
+  priorSearch?: NonNullable<QueryIntent["priorSearch"]>;
+}): CatalogueConversationContext | null {
+  const modelIds = [...new Set(input.modelIds ?? [])];
+  const variantIds = [...new Set(input.variantIds ?? [])];
+  const targetModels = input.targetModels ?? [];
+
+  if (
+    modelIds.length === 0 &&
+    variantIds.length === 0 &&
+    targetModels.length === 0 &&
+    !input.priorSearch
+  ) {
+    return null;
+  }
+
+  return {
+    modelIds: modelIds.length > 0 ? modelIds : undefined,
+    variantIds: variantIds.length > 0 ? variantIds : undefined,
+    targetModels: targetModels.length > 0 ? targetModels : undefined,
+    priorSearch: input.priorSearch,
+  };
+}
+
 export function buildCatalogueContextPart(context: CatalogueConversationContext) {
   if (
     !context.modelIds?.length &&
@@ -176,7 +203,7 @@ export function buildCatalogueContextPart(context: CatalogueConversationContext)
       variantIds: context.variantIds ?? [],
       targetModels: context.targetModels ?? [],
     },
-  };
+  } as const;
 }
 
 export { CATALOGUE_CONTEXT_PART_TYPE, isPriceFollowUp };

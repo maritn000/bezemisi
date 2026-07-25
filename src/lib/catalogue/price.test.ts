@@ -128,6 +128,55 @@ test("resolveBestPriceForModel returns explicit unavailable status", () => {
   assert.equal(resolved?.value, null);
 });
 
+test("resolveBestPriceForModel ignores implausible scraped offer prices", () => {
+  const model = buildModelSummary({
+    name: "Kia EV3",
+    slug: "ev3",
+    brandName: "Kia",
+    brandSlug: "kia",
+    currentOffers: [
+      {
+        id: "offer-bad",
+        title: "Trim price",
+        currentPrice: 3,
+        currency: "CZK",
+        availabilityStatus: "available",
+        observedAt: "2026-07-24",
+        offerUrl: null,
+        isCurrent: true,
+        source: {
+          id: "src-bad",
+          title: "Bad scrape",
+          url: "https://example.com/bad",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_vehicle_page",
+          checkedAt: "2026-07-24",
+        },
+      },
+    ],
+    specifications: [
+      {
+        fieldKey: "published_starting_price_czk",
+        value: 899_980,
+        unit: "CZK",
+        verificationStatus: "verified",
+        source: {
+          id: "src-model",
+          title: "Katalog",
+          url: "https://example.com/catalogue",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_vehicle_page",
+          checkedAt: "2026-07-24",
+        },
+      },
+    ],
+  });
+
+  const resolved = resolveBestPriceForModel(model);
+  assert.equal(resolved?.scope, "model");
+  assert.equal(resolved?.value, 899_980);
+});
+
 test("Czech maximum-price search is classified as vehicle_search", () => {
   const intent = understandQuery("Která auta stojí méně než 900 000 Kč?");
   assert.equal(intent.intent, "vehicle_search");
