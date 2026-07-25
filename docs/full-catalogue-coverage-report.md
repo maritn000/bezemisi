@@ -1,6 +1,25 @@
 # Full catalogue coverage report
 
-Generated: 2026-07-25T01:05:00.000Z
+Generated: 2026-07-25T02:52:00.000Z
+
+## Production database snapshot (verified via `/api/internal/catalogue-report`)
+
+| Metric | Production | Preview |
+| --- | ---: | ---: |
+| Brands | 15 | 17 |
+| Models (total rows) | 28 | 30 |
+| Variants | 61 | 61 |
+| Verified variant facts | 171 | 171 |
+| Verified model facts | 181 | 193 |
+| Current offers | 189 | 161 |
+| Commercial conditions | 10 | 10 |
+| Source pages | 156 | 128 |
+| Validation critical errors | 0 | 0 |
+| `/api/health` catalogue | `ready` | `ready` |
+
+Live catalogue cards discovered during ingestion: **27** (both environments).
+
+Stock URLs processed: **247** (seeded list on Vercel).
 
 Dry-run crawl summary (`npm run catalogue:ingest-full -- --dry-run`):
 
@@ -57,7 +76,8 @@ Rows marked `pending` are populated by `npm run catalogue:ingest-full` against `
 - [x] Stock portal crawl (`auto.bezemisi.cz`, 266 offers discovered)
 - [x] Leasing crawl (9 entries)
 - [x] Chat retrieval uses model-level published maximums with `až` semantics
-- [ ] Production database migration applied
-- [ ] Production full ingestion executed
-- [ ] Preview cards verified with local images
-- [ ] Chat regression tests on deployed Preview
+- [x] Production database migration applied (`0002_model_level_specs`)
+- [x] Production full ingestion executed (catalogue + 247 stock URLs)
+- [x] Preview cards verified (BMW iX1 links to `/elektromobily/bmw/ix1`)
+- [x] Chat regression tests on deployed Preview (`/api/chat-self-test`)
+- [x] Production chat smoke test (`/api/chat` returns INSTER sources)
