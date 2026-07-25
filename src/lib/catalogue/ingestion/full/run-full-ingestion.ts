@@ -686,6 +686,22 @@ export async function runFullCatalogueIngestion(
         }
       }
       stockUrlList = [...stockUrls].filter((url) => url.endsWith(".html"));
+
+      if (!dryRun && db) {
+        await db
+          .update(catalogueIngestionRuns)
+          .set({
+            metadata: {
+              summary,
+              stockPageIndex,
+              stockUrls: stockUrlList,
+              phasesComplete: ["pre_stock"],
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(catalogueIngestionRuns.id, ingestionRunId));
+      }
+      await saveIngestionManifest(manifest, runId, ingestionRunId);
     }
 
     const stockBatch = stockUrlList.slice(
