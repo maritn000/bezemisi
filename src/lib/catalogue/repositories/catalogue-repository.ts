@@ -247,6 +247,29 @@ export async function getModelSpecifications(modelId: string) {
   return selected;
 }
 
+export async function getModelSummariesByIds(modelIds: string[]) {
+  if (modelIds.length === 0) return [];
+
+  const summaries = await getModelSummaries();
+  const idSet = new Set(modelIds);
+  return summaries.filter((model) => idSet.has(model.id));
+}
+
+export async function getModelSummariesBySlugs(
+  identifiers: Array<{ brand: string; model: string }>,
+) {
+  if (identifiers.length === 0) return [];
+
+  const summaries = await getModelSummaries();
+  const keys = new Set(
+    identifiers.map((entry) => `${entry.brand}/${entry.model}`.toLowerCase()),
+  );
+
+  return summaries.filter((model) =>
+    keys.has(`${model.brandSlug}/${model.slug}`.toLowerCase()),
+  );
+}
+
 export async function getModelSummaries() {
   const models = await listPresentedModels();
   const summaries: CatalogueModelSummary[] = [];
