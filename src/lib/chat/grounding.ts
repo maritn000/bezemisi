@@ -7,7 +7,7 @@ import {
   getVehicleDetails,
   searchVehicles,
 } from "@/lib/catalogue/catalogue-service";
-import { understandQuery } from "@/lib/catalogue/query-understanding";
+import { understandQuery, understandQueryFromMessages } from "@/lib/catalogue/query-understanding";
 import type {
   CatalogueVariantSummary,
   CommercialConditionResult,
@@ -179,9 +179,17 @@ function formatVariantSection(variant: CatalogueVariantSummary) {
 
 export async function retrieveVehicleContext(
   query: string,
+  options?: {
+    messages?: Array<{
+      role: "user" | "assistant";
+      parts: Array<{ text?: string }>;
+    }>;
+  },
 ): Promise<RetrievalResult> {
   try {
-    const intent = understandQuery(query);
+    const intent = options?.messages?.length
+      ? understandQueryFromMessages(options.messages)
+      : understandQuery(query);
 
     if (
       intent.intent === "out_of_scope" ||
@@ -213,7 +221,22 @@ export async function retrieveVehicleContext(
         limit: 10,
       });
 
-      const context = buildVariantContext(result.variants);
+      const sortedVariants =
+        intent.sortByField && result.variants.length > 1
+          ? [...result.variants].sort((left, right) => {
+              const leftValue = Number(
+                left.specifications.find((spec) => spec.fieldKey === intent.sortByField)
+                  ?.value ?? 0,
+              );
+              const rightValue = Number(
+                right.specifications.find((spec) => spec.fieldKey === intent.sortByField)
+                  ?.value ?? 0,
+              );
+              return rightValue - leftValue;
+            })
+          : result.variants;
+
+      const context = buildVariantContext(sortedVariants);
       return {
         facts: context.facts,
         sources: context.sources,

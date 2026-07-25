@@ -87,6 +87,7 @@ export const queryIntentSchema = z.object({
     .enum(["available", "reserved", "sold", "on_order", "unknown"])
     .optional(),
   requiredFeature: z.enum(SPEC_FIELD_KEYS).optional(),
+  sortByField: z.enum(SPEC_FIELD_KEYS).optional(),
   conditionTypes: z.array(z.string()).optional(),
   needsClarification: z.boolean().optional(),
   clarificationReason: z.string().optional(),

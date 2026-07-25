@@ -25,6 +25,15 @@ const emptyStats = {
   sourcePages: 0,
 };
 
+const emptyRangeMetrics = {
+  verifiedWltpFacts: 0,
+  verifiedRealRangeFacts: 0,
+  variantsMissingWltp: [],
+  ambiguousRangeFacts: [],
+  conflictingRangeFacts: [],
+  facts: [],
+};
+
 const successfulIngestion = {
   runId: "run",
   dryRun: false,
@@ -94,6 +103,10 @@ function createDeps(
         currentOffers: 3,
         commercialConditions: 1,
         sourcePages: 24,
+      },
+      rangeMetrics: {
+        ...emptyRangeMetrics,
+        verifiedWltpFacts: 6,
       },
     }),
     countStats: async () => ({
@@ -360,6 +373,7 @@ test("empty ingestion fails verification", async () => {
         valid: true,
         issues: [],
         stats: emptyStats,
+        rangeMetrics: emptyRangeMetrics,
       }),
       countStats: async () => emptyStats,
       verifyCounts: async () => ({
@@ -398,6 +412,10 @@ test("successful ingestion returns real row counts", async () => {
           currentOffers: 3,
           commercialConditions: 1,
           sourcePages: 24,
+        },
+        rangeMetrics: {
+          ...emptyRangeMetrics,
+          verifiedWltpFacts: 6,
         },
       }),
     }),
@@ -485,6 +503,7 @@ test("validation critical errors fail bootstrap", async () => {
           },
         ],
         stats: emptyStats,
+        rangeMetrics: emptyRangeMetrics,
       }),
       countStats: async () => emptyStats,
       verifyCounts: async () => ({

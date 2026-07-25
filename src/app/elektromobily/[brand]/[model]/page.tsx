@@ -12,6 +12,7 @@ import {
   VehicleHeroImage,
 } from "@/components/site/vehicle-detail";
 import { getPublicVehicleDetail } from "@/lib/catalogue/public-catalogue";
+import { WLTP_RANGE_LABEL } from "@/lib/catalogue/constants";
 import {
   companyInfo,
   findPresentedVehicle,
@@ -117,8 +118,10 @@ export default async function VehicleDetailPage({
                 <dl className="grid gap-3 sm:grid-cols-2">
                   {[
                     [
-                      "Dojezd",
-                      specRows.find((row) => row.label === "WLTP dojezd")?.value ??
+                      WLTP_RANGE_LABEL,
+                      detail.rangeSummary?.label ??
+                        specRows.find((row) => row.label === WLTP_RANGE_LABEL)
+                          ?.value ??
                         "Neuvedeno",
                     ],
                     [
@@ -163,13 +166,32 @@ export default async function VehicleDetailPage({
             <p className="mt-4 leading-7 text-purple-950/70">{vehicle.tagline}</p>
             {detail && specRows.length > 0 && (
               <dl className="mt-8 space-y-4">
+                {detail.variantRanges.length > 1 && (
+                  <div className="rounded-xl bg-lavender px-5 py-4">
+                    <dt className="text-xs font-bold uppercase tracking-[0.12em] text-blue-700">
+                      Ověřený dojezd podle varianty
+                    </dt>
+                    <dd className="mt-3 space-y-2 text-purple-950">
+                      {detail.variantRanges.map((variant) => (
+                        <p key={variant.name}>
+                          <span className="font-medium">{variant.name}</span>
+                          {": "}
+                          {variant.wltpRangeKm !== null
+                            ? `${WLTP_RANGE_LABEL} ${variant.wltpRangeKm} km`
+                            : "neuvedeno"}
+                        </p>
+                      ))}
+                    </dd>
+                  </div>
+                )}
                 {specRows.map((row) => (
                   <div
-                    key={row.label}
+                    key={`${row.label}-${row.variantName ?? "default"}`}
                     className="rounded-xl bg-lavender px-5 py-4"
                   >
                     <dt className="text-xs font-bold uppercase tracking-[0.12em] text-blue-700">
                       {row.label}
+                      {row.variantName ? ` – ${row.variantName}` : ""}
                     </dt>
                     <dd className="mt-1 text-purple-950">{row.value}</dd>
                   </div>

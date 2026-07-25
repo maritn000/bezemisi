@@ -10,6 +10,9 @@ export function VehicleCard({
   image = "/ev-placeholder.svg",
   imageAlt,
   tagline,
+  rangeLabel,
+  priceFrom,
+  observedAt,
 }: {
   name: string;
   category: string;
@@ -17,8 +20,20 @@ export function VehicleCard({
   image?: string;
   imageAlt?: string;
   tagline?: string;
+  rangeKm?: number | null;
+  rangeLabel?: string | null;
+  priceFrom?: number | null;
+  observedAt?: string | null;
 }) {
   const alt = imageAlt ?? name;
+  const formattedPrice =
+    typeof priceFrom === "number"
+      ? new Intl.NumberFormat("cs-CZ", {
+          style: "currency",
+          currency: "CZK",
+          maximumFractionDigits: 0,
+        }).format(priceFrom)
+      : null;
 
   return (
     <article className="overflow-hidden rounded-[1.25rem] bg-white ring-1 ring-purple-950/8 transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_rgba(31,5,86,.08)]">
@@ -45,6 +60,30 @@ export function VehicleCard({
             {name}
           </Link>
         </h3>
+        {(rangeLabel || formattedPrice) && (
+          <dl className="mt-4 space-y-2 text-sm text-purple-950/75">
+            {rangeLabel && (
+              <div>
+                <dt className="sr-only">Dojezd WLTP</dt>
+                <dd>{rangeLabel}</dd>
+              </div>
+            )}
+            {formattedPrice && (
+              <div>
+                <dt className="sr-only">Cena od</dt>
+                <dd>Cena od {formattedPrice}</dd>
+              </div>
+            )}
+            {observedAt && (
+              <div>
+                <dt className="sr-only">Datum pozorování</dt>
+                <dd className="text-xs text-purple-950/55">
+                  Pozorováno {observedAt}
+                </dd>
+              </div>
+            )}
+          </dl>
+        )}
         {tagline && (
           <p className="mt-4 min-h-14 line-clamp-2 leading-7 text-purple-950/70">
             {tagline}

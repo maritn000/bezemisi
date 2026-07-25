@@ -42,6 +42,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     stats,
     validation,
+    rangeMetrics: validation.rangeMetrics,
     runs,
     issues,
   });

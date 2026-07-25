@@ -41,3 +41,28 @@ export const OFFER_STALE_DAYS = 14;
 export const BEZEMISI_BASE_URL = "https://www.bezemisi.cz";
 
 export const MARKET_CZ = "CZ";
+
+export const RANGE_FIELD_KEYS = [
+  "wltp_range_km",
+  "estimated_real_range_km",
+] as const satisfies readonly SpecFieldKey[];
+
+export type RangeFieldKey = (typeof RANGE_FIELD_KEYS)[number];
+
+/** Legacy or alternate keys observed in imports — mapped to canonical field keys. */
+export const LEGACY_RANGE_FIELD_KEY_MAP: Record<string, RangeFieldKey> = {
+  range_wltp_km: "wltp_range_km",
+  wltp_range: "wltp_range_km",
+  range_km: "wltp_range_km",
+  range: "wltp_range_km",
+  dojezd_wltp: "wltp_range_km",
+  dojezd_wltp_km: "wltp_range_km",
+  dojezd_km: "wltp_range_km",
+  real_range_km: "estimated_real_range_km",
+  estimated_range_km: "estimated_real_range_km",
+};
+
+export const WLTP_RANGE_FIELD_KEY: RangeFieldKey = "wltp_range_km";
+export const REAL_RANGE_FIELD_KEY: RangeFieldKey = "estimated_real_range_km";
+
+export const WLTP_RANGE_LABEL = "Dojezd WLTP";

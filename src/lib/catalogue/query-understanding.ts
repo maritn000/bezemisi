@@ -177,6 +177,18 @@ export function understandQuery(query: string): QueryIntent {
     });
   }
 
+  if (/(jaký|jaky).{0,20}dojezd|dojezd.{0,20}(má|ma)/i.test(query)) {
+    const detailModels = extractModels(query);
+    if (detailModels.length === 1) {
+      const parts = detailModels[0]!.split(/\s+/);
+      return queryIntentSchema.parse({
+        intent: "vehicle_detail",
+        brand: parts[0] ? normalize(parts[0]) : undefined,
+        model: parts.slice(1).join("-").toLowerCase(),
+      });
+    }
+  }
+
   if (/(elektromobil|auto|vůz|model)/i.test(query)) {
     return queryIntentSchema.parse({
       intent: "vehicle_search",
@@ -192,4 +204,69 @@ export function understandQuery(query: string): QueryIntent {
     clarificationReason:
       "Upřesněte prosím, zda hledáte konkrétní model, srovnání, cenu nebo obchodní podmínky.",
   });
+}
+
+type UserMessage = {
+  role: "user" | "assistant";
+  parts: Array<{ text?: string }>;
+};
+
+function getUserMessageTexts(messages: UserMessage[]) {
+  return messages
+    .filter((message) => message.role === "user")
+    .map((message) =>
+      message.parts
+        .map((part) => part.text ?? "")
+        .join("\n")
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+function isReferentialFollowUp(query: string) {
+  return /(z nich|z těch|u těch|z výše|z předchozí|z toho seznamu|které z nich|která z nich)/i.test(
+    query,
+  );
+}
+
+export function understandQueryFromMessages(messages: UserMessage[]) {
+  const userTexts = getUserMessageTexts(messages);
+  const latest = userTexts.at(-1) ?? "";
+  const previous = userTexts.slice(0, -1);
+
+  const intent = understandQuery(latest);
+
+  if (!isReferentialFollowUp(latest) || previous.length === 0) {
+    return intent;
+  }
+
+  const priorIntents = previous.map((text) => understandQuery(text));
+  const priorRangeSearch = [...priorIntents]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.intent === "vehicle_search" &&
+        typeof candidate.minimumWltpRange === "number",
+    );
+
+  if (!priorRangeSearch?.minimumWltpRange) {
+    return intent;
+  }
+
+  if (/(největší|nejvetsi|největší|nejvetsi).{0,20}kufr/i.test(latest)) {
+    return queryIntentSchema.parse({
+      intent: "vehicle_search",
+      minimumWltpRange: priorRangeSearch.minimumWltpRange,
+      sortByField: "boot_capacity_l",
+    });
+  }
+
+  if (intent.intent === "clarification_needed") {
+    return queryIntentSchema.parse({
+      intent: "vehicle_search",
+      minimumWltpRange: priorRangeSearch.minimumWltpRange,
+    });
+  }
+
+  return intent;
 }
