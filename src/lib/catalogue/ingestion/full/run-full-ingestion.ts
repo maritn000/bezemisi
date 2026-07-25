@@ -51,6 +51,7 @@ export type FullIngestionOptions = {
   skipManufacturerSupplement?: boolean;
   ingestionRunId?: string;
   stockOnly?: boolean;
+  skipStock?: boolean;
 };
 
 export type FullIngestionSummary = {
@@ -178,6 +179,7 @@ export async function runFullCatalogueIngestion(
   };
 
   const stockOnly = options.stockOnly ?? false;
+  const skipStock = options.skipStock ?? false;
 
   const db = dryRun ? null : createDb(getNormalizedDatabaseUrl());
 
@@ -704,6 +706,8 @@ export async function runFullCatalogueIngestion(
     }
     }
 
+    let stockComplete = true;
+    if (!skipStock) {
     if (!stockUrlList) {
       if (process.env.VERCEL) {
         stockUrlList = getKnownStockDetailUrls();
@@ -811,7 +815,8 @@ export async function runFullCatalogueIngestion(
     }
 
     stockPageIndex += stockBatch.length;
-    const stockComplete = stockPageIndex >= stockUrlList.length;
+    stockComplete = stockPageIndex >= stockUrlList.length;
+    }
 
     await saveIngestionManifest(manifest, runId, ingestionRunId);
 
