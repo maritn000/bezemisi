@@ -19,6 +19,7 @@ const ALLOWED_ACTIONS = new Set([
   "migrate",
   "ingest_full",
   "ingest_full_dry_run",
+  "ingest_stock",
 ]);
 
 type RequestBody = {
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
     dryRun: action === "ingest_full_dry_run",
     resume: body.resume ?? true,
     runId: body.runId,
+    stockOnly: action === "ingest_stock",
   });
 
   return NextResponse.json({

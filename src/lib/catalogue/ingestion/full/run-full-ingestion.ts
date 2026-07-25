@@ -23,6 +23,7 @@ import {
   discoverStockUrls,
   parseStockDetailPage,
 } from "@/lib/catalogue/ingestion/crawl/stock-parser";
+import { getKnownStockDetailUrls } from "@/lib/catalogue/ingestion/crawl/stock-urls";
 import { downloadVehicleImage } from "@/lib/catalogue/ingestion/images/download-images";
 import {
   loadIngestionManifest,
@@ -49,6 +50,7 @@ export type FullIngestionOptions = {
   runId?: string;
   skipManufacturerSupplement?: boolean;
   ingestionRunId?: string;
+  stockOnly?: boolean;
 };
 
 export type FullIngestionSummary = {
@@ -175,6 +177,8 @@ export async function runFullCatalogueIngestion(
     blockedUrls: [],
   };
 
+  const stockOnly = options.stockOnly ?? false;
+
   const db = dryRun ? null : createDb(getNormalizedDatabaseUrl());
 
   let ingestionRunId = options.ingestionRunId ?? "dry-run";
@@ -209,7 +213,8 @@ export async function runFullCatalogueIngestion(
         stockPageIndex = persisted.stockPageIndex ?? 0;
         stockUrlList = persisted.stockUrls ?? null;
         resumeAtStock = Boolean(
-          (persisted.stockPageIndex ?? 0) > 0 ||
+          stockOnly ||
+            (persisted.stockPageIndex ?? 0) > 0 ||
             (persisted.stockUrls?.length ?? 0) > 0 ||
             ((persisted.summary?.discovered?.catalogueModels ?? 0) > 0 &&
               (persisted.summary?.stored?.models ?? 0) > 0),
@@ -242,7 +247,7 @@ export async function runFullCatalogueIngestion(
       >();
 
   try {
-    if (!resumeAtStock) {
+    if (!resumeAtStock && !stockOnly) {
     const catalogueCrawl = await crawlUrl(
       CATALOGUE_ROOT,
       "catalogue_root",
@@ -670,6 +675,9 @@ export async function runFullCatalogueIngestion(
     }
 
     if (!stockUrlList) {
+      if (process.env.VERCEL) {
+        stockUrlList = getKnownStockDetailUrls();
+      } else {
       const stockCrawl = await crawlUrl(STOCK_ROOT, "stock_list", crawlOptions);
       const stockUrls = new Set<string>(discoverStockUrls(stockCrawl.html));
       for (const listUrl of stockUrls) {
@@ -686,6 +694,7 @@ export async function runFullCatalogueIngestion(
         }
       }
       stockUrlList = [...stockUrls].filter((url) => url.endsWith(".html"));
+      }
 
       if (!dryRun && db) {
         await db
