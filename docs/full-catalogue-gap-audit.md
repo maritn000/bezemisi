@@ -1,10 +1,10 @@
 # Full catalogue gap audit
 
-Generated: 2026-07-25T01:05:00.000Z
+Generated: 2026-07-25T02:52:00.000Z
 
-This audit combines a **read-only dry-run crawl** of the live Bez emisí public catalogue (`https://www.bezemisi.cz/elektromobily`) with the ingestion pipeline state available in this environment.
+This audit combines a **read-only dry-run crawl** of the live Bez emisí public catalogue (`https://www.bezemisi.cz/elektromobily`) with verified database rows from Production and Preview after migration `0002_model_level_specs` and full ingestion.
 
-> **Database note:** This cloud-agent run did not have `DATABASE_URL` / Neon credentials available locally. Run `npm run catalogue:audit-gap` against `bezemisi_db` after deploying migration `0002_model_level_specs` to regenerate the per-model matrix from live database rows.
+> **Database note:** Production and Preview use separate Neon targets. Counts below are from authenticated `/api/internal/catalogue-report` responses on 2026-07-25.
 
 ## Aggregate discovery (dry-run crawl, 2026-07-25)
 
@@ -18,7 +18,23 @@ This audit combines a **read-only dry-run crawl** of the live Bez emisí public 
 | Leasing entries (`/operativni-leasing`) | 9 |
 | Blocked URLs | 0 |
 
-## Pre-import baseline (production snapshot before this PR)
+## Post-ingestion production snapshot (2026-07-25)
+
+| Entity | Production | Preview |
+| --- | ---: | ---: |
+| Brands | 15 | 17 |
+| Models (DB rows) | 28 | 30 |
+| Variants | 61 | 61 |
+| Verified variant facts | 171 | 171 |
+| Verified model facts | 181 | 193 |
+| Current offers | 189 | 161 |
+| Commercial conditions | 10 | 10 |
+| Source pages | 156 | 128 |
+| Catalogue cards (live crawl) | 27 | 27 |
+| Stock URLs ingested | 247 | 247 |
+| Last ingestion status | `completed_with_warnings` | `completed_with_warnings` |
+
+## Pre-import baseline (production snapshot before rollout)
 
 From production health endpoint (`https://bezemisi.vercel.app/api/health`) at audit time:
 

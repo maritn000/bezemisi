@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { createDb } from "@/db/create-client";
 import { getNormalizedDatabaseUrl } from "@/env";
-import { catalogueIngestionRuns } from "@/db/schema";
+import { catalogueIngestionRuns, vehicleBrands, vehicleModels } from "@/db/schema";
 import { BEZEMISI_BASE_URL } from "@/lib/catalogue/constants";
 import { VERIFIED_VARIANT_SEEDS } from "@/lib/catalogue/ingestion/seed-data";
 import { crawlUrl } from "@/lib/catalogue/ingestion/crawl/crawler";
@@ -23,15 +23,19 @@ import {
   discoverStockUrls,
   parseStockDetailPage,
 } from "@/lib/catalogue/ingestion/crawl/stock-parser";
+import { getKnownStockDetailUrls } from "@/lib/catalogue/ingestion/crawl/stock-urls";
 import { downloadVehicleImage } from "@/lib/catalogue/ingestion/images/download-images";
 import {
-  loadManifest,
-  saveManifest,
+  loadIngestionManifest,
+  saveIngestionManifest,
+} from "@/lib/catalogue/ingestion/crawl/manifest-store";
+import {
   upsertManifestEntry,
 } from "@/lib/catalogue/ingestion/crawl/manifest";
 import {
   recordIngestionIssue,
   seedSpecToFact,
+  deactivateInvalidPresentedModels,
   upsertBrandRecord,
   upsertCommercialConditionRecord,
   upsertModelRecord,
@@ -46,11 +50,16 @@ export type FullIngestionOptions = {
   resume?: boolean;
   runId?: string;
   skipManufacturerSupplement?: boolean;
+  ingestionRunId?: string;
+  stockOnly?: boolean;
+  skipStock?: boolean;
 };
 
 export type FullIngestionSummary = {
   runId: string;
+  ingestionRunId: string;
   dryRun: boolean;
+  status: "in_progress" | "completed" | "completed_with_warnings" | "failed";
   discovered: {
     catalogueModels: number;
     modelPages: number;
@@ -77,6 +86,43 @@ const CATALOGUE_ROOT = `${BEZEMISI_BASE_URL}/elektromobily`;
 const ACTION_ROOT = `${BEZEMISI_BASE_URL}/akcni-nabidky`;
 const LEASING_ROOT = `${BEZEMISI_BASE_URL}/operativni-leasing`;
 const STOCK_ROOT = "https://auto.bezemisi.cz/nabidka-vozu/";
+const STOCK_BATCH_SIZE = 10;
+
+type PersistedIngestionState = {
+  summary?: FullIngestionSummary;
+  stockPageIndex?: number;
+  stockUrls?: string[];
+  phasesComplete?: string[];
+};
+
+async function loadModelRegistryFromDb(
+  db: NonNullable<ReturnType<typeof createDb>>,
+) {
+  const joined = await db
+    .select({
+      modelId: vehicleModels.id,
+      modelSlug: vehicleModels.slug,
+      brandSlug: vehicleBrands.slug,
+    })
+    .from(vehicleModels)
+    .innerJoin(vehicleBrands, eq(vehicleModels.brandId, vehicleBrands.id));
+
+  const registry = new Map<
+    string,
+    { brandSlug: string; modelSlug: string; modelId: string; detailUrl: string | null }
+  >();
+
+  for (const row of joined) {
+    registry.set(modelKey(row.brandSlug, row.modelSlug), {
+      brandSlug: row.brandSlug,
+      modelSlug: row.modelSlug,
+      modelId: row.modelId,
+      detailUrl: null,
+    });
+  }
+
+  return registry;
+}
 
 function modelKey(brandSlug: string, modelSlug: string) {
   return `${brandSlug}/${modelSlug}`;
@@ -108,7 +154,9 @@ export async function runFullCatalogueIngestion(
 
   const summary: FullIngestionSummary = {
     runId,
+    ingestionRunId: "dry-run",
     dryRun,
+    status: "in_progress",
     discovered: {
       catalogueModels: 0,
       modelPages: 0,
@@ -131,29 +179,108 @@ export async function runFullCatalogueIngestion(
     blockedUrls: [],
   };
 
-  const manifest = await loadManifest(runId);
-  const crawlOptions = { runId, manifest, resume };
+  const stockOnly = options.stockOnly ?? false;
+  const skipStock = options.skipStock ?? false;
+
   const db = dryRun ? null : createDb(getNormalizedDatabaseUrl());
 
-  let ingestionRunId = "dry-run";
+  let ingestionRunId = options.ingestionRunId ?? "dry-run";
+  let stockPageIndex = 0;
+  let stockUrlList: string[] | null = null;
+  let resumeAtStock = false;
+
   if (!dryRun && db) {
-    const [run] = await db
-      .insert(catalogueIngestionRuns)
-      .values({
-        runType: "full_crawl",
-        status: "running",
-        startedAt: observedAt,
-      })
-      .returning();
-    ingestionRunId = run!.id;
+    if (resume && ingestionRunId === "dry-run") {
+      const runningRuns = await db
+        .select()
+        .from(catalogueIngestionRuns)
+        .where(eq(catalogueIngestionRuns.status, "running"));
+
+      const staleCutoff = Date.now() - 10 * 60 * 1000;
+      for (const staleRun of runningRuns) {
+        const started = staleRun.startedAt?.getTime() ?? 0;
+        if (started > 0 && started < staleCutoff) {
+          await db
+            .update(catalogueIngestionRuns)
+            .set({
+              status: "completed_with_warnings",
+              completedAt: new Date(),
+              metadata: {
+                ...(typeof staleRun.metadata === "object" && staleRun.metadata
+                  ? staleRun.metadata
+                  : {}),
+                staleRunRecovered: true,
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(catalogueIngestionRuns.id, staleRun.id));
+        }
+      }
+
+      const [existingRun] = await db
+        .select()
+        .from(catalogueIngestionRuns)
+        .where(eq(catalogueIngestionRuns.status, "running"))
+        .limit(1);
+
+      if (existingRun) {
+        ingestionRunId = existingRun.id;
+        const rawMetadata = existingRun.metadata as
+          | PersistedIngestionState
+          | FullIngestionSummary
+          | null;
+        const persisted: PersistedIngestionState =
+          rawMetadata &&
+          "discovered" in rawMetadata &&
+          "stored" in rawMetadata &&
+          !("summary" in rawMetadata)
+            ? { summary: rawMetadata }
+            : (rawMetadata as PersistedIngestionState) ?? {};
+        if (persisted.summary) {
+          Object.assign(summary, persisted.summary);
+        }
+        stockPageIndex = persisted.stockPageIndex ?? 0;
+        stockUrlList = persisted.stockUrls ?? null;
+        resumeAtStock = Boolean(
+          stockOnly ||
+            (persisted.stockPageIndex ?? 0) > 0 ||
+            (persisted.stockUrls?.length ?? 0) > 0 ||
+            ((persisted.summary?.discovered?.catalogueModels ?? 0) > 0 &&
+              (persisted.summary?.stored?.models ?? 0) > 0),
+        );
+      }
+    }
+
+    if (ingestionRunId === "dry-run") {
+      const [run] = await db
+        .insert(catalogueIngestionRuns)
+        .values({
+          runType: "full_crawl",
+          status: "running",
+          startedAt: observedAt,
+        })
+        .returning();
+      ingestionRunId = run!.id;
+    }
+    summary.ingestionRunId = ingestionRunId;
   }
 
-  const modelRegistry = new Map<
-    string,
-    { brandSlug: string; modelSlug: string; modelId: string; detailUrl: string | null }
-  >();
+  if (stockOnly) {
+    resumeAtStock = true;
+  }
+
+  const manifest = await loadIngestionManifest(runId, ingestionRunId);
+  const crawlOptions = { runId, manifest, resume };
+
+  const modelRegistry = resumeAtStock && db
+    ? await loadModelRegistryFromDb(db)
+    : new Map<
+        string,
+        { brandSlug: string; modelSlug: string; modelId: string; detailUrl: string | null }
+      >();
 
   try {
+    if (!resumeAtStock && !stockOnly) {
     const catalogueCrawl = await crawlUrl(
       CATALOGUE_ROOT,
       "catalogue_root",
@@ -170,7 +297,10 @@ export async function runFullCatalogueIngestion(
     const discoveredUrls = discoverCatalogueUrls(catalogueCrawl.html);
     const modelPageUrls = discoveredUrls.filter((url) =>
       /\/elektromobily\/[^/]+\/[^/]+$/.test(url),
-    );
+    ).filter((url) => {
+      const brandSlug = url.replace(/\/$/, "").split("/").at(-2);
+      return Boolean(brandSlug && !brandSlug.startsWith("data-"));
+    });
     const brandPageUrls = discoveredUrls.filter(
       (url) =>
         /\/elektromobily\/[^/]+$/.test(url) && !url.endsWith("/elektromobily"),
@@ -297,6 +427,11 @@ export async function runFullCatalogueIngestion(
             message: "Katalogový obrázek modelu nebyl nalezen.",
           });
         }
+      }
+
+      const deactivatedInvalidModels = await deactivateInvalidPresentedModels(db);
+      if (deactivatedInvalidModels > 0) {
+        summary.warningsCount += deactivatedInvalidModels;
       }
     }
 
@@ -578,25 +713,55 @@ export async function runFullCatalogueIngestion(
         summary.stored.leasingConditions += 1;
       }
     }
-
-    const stockCrawl = await crawlUrl(STOCK_ROOT, "stock_list", crawlOptions);
-    const stockUrls = new Set<string>(discoverStockUrls(stockCrawl.html));
-    for (const listUrl of stockUrls) {
-      if (!listUrl.endsWith(".html")) {
-        const listCrawl = await crawlUrl(
-          listUrl,
-          "stock_list",
-          crawlOptions,
-          STOCK_ROOT,
-        );
-        for (const detailUrl of discoverStockUrls(listCrawl.html)) {
-          stockUrls.add(detailUrl);
-        }
-      }
     }
 
-    for (const stockUrl of stockUrls) {
-      if (!stockUrl.endsWith(".html")) continue;
+    let stockComplete = true;
+    if (!skipStock) {
+    if (!stockUrlList) {
+      if (process.env.VERCEL) {
+        stockUrlList = getKnownStockDetailUrls();
+      } else {
+      const stockCrawl = await crawlUrl(STOCK_ROOT, "stock_list", crawlOptions);
+      const stockUrls = new Set<string>(discoverStockUrls(stockCrawl.html));
+      for (const listUrl of stockUrls) {
+        if (!listUrl.endsWith(".html")) {
+          const listCrawl = await crawlUrl(
+            listUrl,
+            "stock_list",
+            crawlOptions,
+            STOCK_ROOT,
+          );
+          for (const detailUrl of discoverStockUrls(listCrawl.html)) {
+            stockUrls.add(detailUrl);
+          }
+        }
+      }
+      stockUrlList = [...stockUrls].filter((url) => url.endsWith(".html"));
+      }
+
+      if (!dryRun && db) {
+        await db
+          .update(catalogueIngestionRuns)
+          .set({
+            metadata: {
+              summary,
+              stockPageIndex,
+              stockUrls: stockUrlList,
+              phasesComplete: ["pre_stock"],
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(catalogueIngestionRuns.id, ingestionRunId));
+      }
+      await saveIngestionManifest(manifest, runId, ingestionRunId);
+    }
+
+    const stockBatch = stockUrlList.slice(
+      stockPageIndex,
+      stockPageIndex + STOCK_BATCH_SIZE,
+    );
+
+    for (const stockUrl of stockBatch) {
       const crawl = await crawlUrl(
         stockUrl,
         "stock_detail",
@@ -658,19 +823,31 @@ export async function runFullCatalogueIngestion(
       }
     }
 
-    await saveManifest(manifest, runId);
+    stockPageIndex += stockBatch.length;
+    stockComplete = stockPageIndex >= stockUrlList.length;
+    }
+
+    await saveIngestionManifest(manifest, runId, ingestionRunId);
 
     if (!dryRun && db) {
+      const runStatus = !stockComplete
+        ? "running"
+        : summary.errorsCount > 0
+          ? "completed_with_warnings"
+          : summary.warningsCount > 0
+            ? "completed_with_warnings"
+            : "completed";
+
+      summary.status =
+        runStatus === "running"
+          ? "in_progress"
+          : (runStatus as FullIngestionSummary["status"]);
+
       await db
         .update(catalogueIngestionRuns)
         .set({
-          status:
-            summary.errorsCount > 0
-              ? "completed_with_warnings"
-              : summary.warningsCount > 0
-                ? "completed_with_warnings"
-                : "completed",
-          completedAt: new Date(),
+          status: runStatus,
+          completedAt: stockComplete ? new Date() : null,
           pagesDiscovered:
             summary.discovered.catalogueModels +
             summary.discovered.modelPages +
@@ -684,13 +861,25 @@ export async function runFullCatalogueIngestion(
           offersCreated: summary.stored.offers,
           warningsCount: summary.warningsCount,
           errorsCount: summary.errorsCount,
-          metadata: summary,
+          metadata: {
+            summary,
+            stockPageIndex,
+            stockUrls: stockUrlList,
+            phasesComplete: stockComplete
+              ? ["pre_stock", "stock"]
+              : resumeAtStock
+                ? ["pre_stock"]
+                : ["pre_stock"],
+          },
           updatedAt: new Date(),
         })
         .where(eq(catalogueIngestionRuns.id, ingestionRunId));
+    } else if (stockComplete) {
+      summary.status = "completed";
     }
   } catch (error) {
     summary.errorsCount += 1;
+    summary.status = "failed";
     if (!dryRun && db) {
       await db
         .update(catalogueIngestionRuns)

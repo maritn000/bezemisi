@@ -39,9 +39,48 @@ function extractImageUrl(sectionHtml: string) {
   return null;
 }
 
+function stripHtmlForCatalogueParsing(html: string) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
+}
+
+function isValidCatalogueTitle(title: string) {
+  if (!title || title.length > 80) return false;
+  if (/\$\{|___\(|[\\]u2192|solidpixels|CMS_CONFIG/i.test(title)) return false;
+  if (/data\.|function\s*\(|=&gt;|=&lt;/i.test(title)) return false;
+  return true;
+}
+
+function parseSlugsFromDetailUrl(detailUrl: string | null) {
+  if (!detailUrl) return null;
+
+  try {
+    const pathname = new URL(detailUrl).pathname.replace(/\/$/, "");
+    const parts = pathname.split("/").filter(Boolean);
+    const elektromobilyIndex = parts.indexOf("elektromobily");
+    if (elektromobilyIndex >= 0 && parts.length >= elektromobilyIndex + 3) {
+      return {
+        brandSlug: parts[elektromobilyIndex + 1],
+        modelSlug: parts[elektromobilyIndex + 2],
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 function extractDetailUrl(sectionHtml: string) {
+  const buttonMatch = sectionHtml.match(
+    /href="(https:\/\/www\.bezemisi\.cz\/elektromobily\/[^"/]+\/[^"/]+)"[^>]*>[\s\S]*?Více o modelu/i,
+  );
+  if (buttonMatch?.[1]) return buttonMatch[1];
+
   const match = sectionHtml.match(
-    /href="(https:\/\/www\.bezemisi\.cz\/elektromobily\/[^"/]+(?:\/[^"/]+)?)"/i,
+    /href="(https:\/\/www\.bezemisi\.cz\/elektromobily\/[^"/]+\/[^"/]+)"/i,
   );
   return match?.[1] ?? null;
 }
@@ -71,23 +110,29 @@ function parseBrandAndModel(title: string) {
 
 export function parseCataloguePage(html: string): ParsedCatalogueCard[] {
   const cards: ParsedCatalogueCard[] = [];
-  const sections = splitCatalogueSections(html);
+  const sections = splitCatalogueSections(stripHtmlForCatalogueParsing(html));
 
   for (const section of sections) {
     const titleMatch = section.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
     if (!titleMatch?.[1]) continue;
 
     const title = stripTags(titleMatch[1]);
-    if (!title || /nejnovější|značky|rodinu|města|podnikatele/i.test(title)) {
+    if (
+      !title ||
+      !isValidCatalogueTitle(title) ||
+      /nejnovější|značky|rodinu|města|podnikatele/i.test(title)
+    ) {
       continue;
     }
 
     const text = stripTags(section);
     const { brandName, modelName } = parseBrandAndModel(title);
-    const brandSlug = slugify(brandName);
     const detailUrl = extractDetailUrl(section);
+    const urlSlugs = parseSlugsFromDetailUrl(detailUrl);
+    const brandSlug = urlSlugs?.brandSlug ?? slugify(brandName);
     const modelSlug =
-      detailUrl?.split("/").pop() ?? slugify(modelName.replace(brandName, "").trim());
+      urlSlugs?.modelSlug ??
+      slugify(modelName.replace(brandName, "").trim());
 
     const priceUnavailable = /cena\s+ještě\s+není\s+dostupná/i.test(text);
     const startingPriceCzk = priceUnavailable

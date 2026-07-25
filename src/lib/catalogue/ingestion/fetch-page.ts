@@ -12,9 +12,13 @@ export type FetchedPage = {
   fetchedAt: Date;
 };
 
-export async function fetchPage(url: string): Promise<FetchedPage> {
+export async function fetchPage(
+  url: string,
+  options?: { skipDelay?: boolean },
+): Promise<FetchedPage> {
   const now = Date.now();
-  const waitFor = REQUEST_DELAY_MS - (now - lastRequestAt);
+  const delayMs = options?.skipDelay ? 0 : REQUEST_DELAY_MS;
+  const waitFor = delayMs - (now - lastRequestAt);
   if (waitFor > 0) {
     await new Promise((resolve) => setTimeout(resolve, waitFor));
   }

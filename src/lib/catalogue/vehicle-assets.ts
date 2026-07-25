@@ -19,7 +19,8 @@ export function enrichVehicleCard<
   return {
     ...card,
     image:
-      card.imagePath && card.imagePath !== "/ev-placeholder.svg"
+      card.imagePath &&
+      card.imagePath !== "/ev-placeholder.svg"
         ? card.imagePath
         : presentation?.image ?? "/ev-placeholder.svg",
     imageAlt: presentation?.imageAlt ?? card.name,

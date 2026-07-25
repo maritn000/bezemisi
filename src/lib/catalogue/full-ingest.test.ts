@@ -32,8 +32,15 @@ describe("Czech catalogue parsers", () => {
     assert.ok(cards.length >= 23);
     const ix1 = cards.find((card) => card.modelSlug === "ix1");
     assert.ok(ix1);
+    assert.equal(ix1?.brandSlug, "bmw");
+    assert.equal(ix1?.detailUrl, "https://www.bezemisi.cz/elektromobily/bmw/ix1");
     assert.equal(ix1?.maxWltpRangeKm, 474);
     assert.equal(ix1?.startingPriceCzk, 1_068_600);
+    assert.equal(
+      cards.some((card) => card.brandSlug === "data-title"),
+      false,
+      "script-embedded h3 templates must not become catalogue cards",
+    );
   });
 
   it("parses model-level and variant facts from detail fixture", () => {

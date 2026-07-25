@@ -40,6 +40,10 @@ export type DownloadedImage = {
   reused: boolean;
 };
 
+function shouldUseRemoteImagePath() {
+  return Boolean(process.env.VERCEL);
+}
+
 export async function downloadVehicleImage(input: {
   sourceUrl: string;
   brandSlug: string;
@@ -48,6 +52,15 @@ export async function downloadVehicleImage(input: {
 }): Promise<DownloadedImage | null> {
   if (!input.sourceUrl || !input.sourceUrl.startsWith("http")) {
     return null;
+  }
+
+  if (shouldUseRemoteImagePath()) {
+    return {
+      sourceUrl: input.sourceUrl,
+      localPath: input.sourceUrl,
+      contentHash: input.sourceUrl,
+      reused: true,
+    };
   }
 
   const response = await fetch(input.sourceUrl, {
