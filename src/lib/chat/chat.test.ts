@@ -203,8 +203,9 @@ test("formatSourceReferences only lists provided sources", () => {
   };
 
   const formatted = formatSourceReferences(result);
-  assert.match(formatted, /src-1/);
+  assert.match(formatted, /Zdroj 1:/);
   assert.match(formatted, /Katalog Bez emisí/);
+  assert.doesNotMatch(formatted, /src-1/);
   assert.doesNotMatch(formatted, /vymyšlen/);
 });
 
