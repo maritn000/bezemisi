@@ -7,6 +7,9 @@ export function VehicleGrid({
     name: string;
     category: string;
     href?: string;
+    image?: string;
+    imageAlt?: string;
+    tagline?: string;
     rangeKm?: number | null;
     priceFrom?: number | null;
     observedAt?: string | null;
@@ -15,7 +18,7 @@ export function VehicleGrid({
   return (
     <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
       {vehicles.map((vehicle) => (
-        <VehicleCard key={vehicle.name} {...vehicle} />
+        <VehicleCard key={vehicle.href ?? vehicle.name} {...vehicle} />
       ))}
     </div>
   );
