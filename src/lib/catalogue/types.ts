@@ -91,6 +91,34 @@ export const queryIntentSchema = z.object({
   conditionTypes: z.array(z.string()).optional(),
   needsClarification: z.boolean().optional(),
   clarificationReason: z.string().optional(),
+  priorSearch: z
+    .object({
+      intent: z.literal("vehicle_search"),
+      brand: z.string().optional(),
+      model: z.string().optional(),
+      minimumWltpRange: z.number().optional(),
+      minimumRealRange: z.number().optional(),
+      minimumBootCapacity: z.number().optional(),
+      minimumSeats: z.number().int().optional(),
+      maximumPrice: z.number().optional(),
+      drivetrain: z.string().optional(),
+      availability: z
+        .enum(["available", "reserved", "sold", "on_order", "unknown"])
+        .optional(),
+      requiredFeature: z.enum(SPEC_FIELD_KEYS).optional(),
+      sortByField: z.enum(SPEC_FIELD_KEYS).optional(),
+    })
+    .optional(),
+  targetModels: z
+    .array(
+      z.object({
+        brand: z.string(),
+        model: z.string(),
+      }),
+    )
+    .optional(),
+  modelIds: z.array(z.string().uuid()).optional(),
+  variantIds: z.array(z.string().uuid()).optional(),
 });
 
 export type SearchVehiclesInput = z.infer<typeof searchVehiclesInputSchema>;

@@ -7,13 +7,24 @@ import {
   getVehicleDetails,
   searchVehicles,
 } from "@/lib/catalogue/catalogue-service";
-import { searchModelsByPublishedFacts } from "@/lib/catalogue/repositories/catalogue-repository";
+import {
+  formatResolvedPriceForGrounding,
+  resolveBestPriceForModel,
+  resolvedPriceToFact,
+} from "@/lib/catalogue/price-retrieval";
+import {
+  getModelSummariesByIds,
+  getModelSummariesBySlugs,
+  searchModelsByPublishedFacts,
+} from "@/lib/catalogue/repositories/catalogue-repository";
 import { understandQuery, understandQueryFromMessages } from "@/lib/catalogue/query-understanding";
 import type {
   CatalogueVariantSummary,
   CommercialConditionResult,
+  QueryIntent,
   SourceReference,
 } from "@/lib/catalogue/types";
+import { resolveConversationContext } from "@/lib/chat/conversation-context";
 
 import { CHAT_ERRORS } from "./errors";
 
@@ -32,6 +43,8 @@ export type VerifiedFact = {
   value: string | number | boolean | null;
   unit?: string | null;
   vehicleId?: string | null;
+  modelId?: string | null;
+  scope?: "model" | "variant" | "offer";
   sourceId: string;
   confidence: "verified";
 };
@@ -145,6 +158,102 @@ function buildVariantContext(variants: CatalogueVariantSummary[]) {
   };
 }
 
+async function buildPriceContextForModels(
+  modelSummaries: Awaited<ReturnType<typeof getModelSummariesByIds>>,
+  variantsByModel = new Map<string, CatalogueVariantSummary[]>(),
+) {
+  const facts: VerifiedFact[] = [];
+  const sources: VerifiedSource[] = [];
+  const priceLines: string[] = [];
+
+  for (const model of modelSummaries) {
+    const variants =
+      variantsByModel.get(model.id) ??
+      (await getVehicleDetails({
+        brand: model.brandSlug,
+        model: model.slug,
+      })).variants;
+    const resolved = resolveBestPriceForModel(model, variants);
+    if (!resolved) continue;
+
+    facts.push(resolvedPriceToFact(resolved));
+    priceLines.push(formatResolvedPriceForGrounding(resolved));
+    sources.push({
+      id: resolved.sourceId,
+      title: `${model.brandName} ${model.name}`,
+      url: model.specifications.find((spec) => spec.source.id === resolved.sourceId)
+        ?.source.url ?? null,
+      checkedAt: resolved.observedAt,
+      sourceType: resolved.scope === "offer" ? "offer" : "catalogue",
+      vehicleId: resolved.variantId ?? resolved.modelId,
+    });
+  }
+
+  return {
+    facts,
+    sources,
+    priceLines,
+    hasVerifiedContext: facts.length > 0,
+  };
+}
+
+async function resolveModelsForPriorSearch(
+  priorSearch: NonNullable<QueryIntent["priorSearch"]>,
+) {
+  const [variantSearch, publishedModels] = await Promise.all([
+    searchVehicles({
+      brand: priorSearch.brand,
+      model: priorSearch.model,
+      minimumWltpRange: priorSearch.minimumWltpRange,
+      minimumRealRange: priorSearch.minimumRealRange,
+      minimumBootCapacity: priorSearch.minimumBootCapacity,
+      minimumSeats: priorSearch.minimumSeats,
+      maximumPrice: priorSearch.maximumPrice,
+      drivetrain: priorSearch.drivetrain,
+      availability: priorSearch.availability,
+      requiredFeature: priorSearch.requiredFeature as never,
+      limit: 10,
+    }),
+    searchModelsByPublishedFacts({
+      minimumWltpRange: priorSearch.minimumWltpRange,
+      maximumPrice: priorSearch.maximumPrice,
+      limit: 10,
+    }),
+  ]);
+
+  const modelMap = new Map<
+    string,
+    Awaited<ReturnType<typeof getModelSummariesByIds>>[number]
+  >();
+  for (const model of publishedModels) {
+    modelMap.set(model.id, model);
+  }
+
+  const variantsByModel = new Map<string, CatalogueVariantSummary[]>();
+  for (const variant of variantSearch.variants) {
+    const details = await getVehicleDetails({
+      brand: variant.brandSlug,
+      model: variant.modelSlug,
+    });
+    const modelSummary = (await getModelSummariesBySlugs([
+      { brand: variant.brandSlug, model: variant.modelSlug },
+    ]))[0];
+    if (!modelSummary) continue;
+    modelMap.set(modelSummary.id, modelSummary);
+    const bucket = variantsByModel.get(modelSummary.id) ?? [];
+    bucket.push(variant);
+    variantsByModel.set(modelSummary.id, bucket);
+    if (details.variants.length > bucket.length) {
+      variantsByModel.set(modelSummary.id, details.variants);
+    }
+  }
+
+  return {
+    models: [...modelMap.values()],
+    variantsByModel,
+  };
+}
+
 function formatVariantLabel(variant: CatalogueVariantSummary) {
   return `${variant.brandName} ${variant.modelName} – ${variant.name}`;
 }
@@ -183,48 +292,60 @@ export async function retrieveVehicleContext(
   options?: {
     messages?: Array<{
       role: "user" | "assistant";
-      parts: Array<{ text?: string }>;
+      parts: Array<{ text?: string; [key: string]: unknown }>;
     }>;
   },
 ): Promise<RetrievalResult> {
   try {
+    const conversationContext = options?.messages?.length
+      ? resolveConversationContext(options.messages)
+      : {};
+
     const intent = options?.messages?.length
       ? understandQueryFromMessages(options.messages)
       : understandQuery(query);
 
+    const enrichedIntent = {
+      ...intent,
+      modelIds: intent.modelIds ?? conversationContext.modelIds,
+      variantIds: intent.variantIds ?? conversationContext.variantIds,
+      targetModels: intent.targetModels ?? conversationContext.targetModels,
+      priorSearch: intent.priorSearch ?? conversationContext.priorSearch,
+    };
+
     if (
-      intent.intent === "out_of_scope" ||
-      intent.intent === "commercial_question"
+      enrichedIntent.intent === "out_of_scope" ||
+      enrichedIntent.intent === "commercial_question"
     ) {
       return emptyRetrieval();
     }
 
-    if (intent.intent === "clarification_needed") {
+    if (enrichedIntent.intent === "clarification_needed") {
       return {
         ...emptyRetrieval(),
         hasVerifiedContext: true,
-        ambiguityMessage: intent.clarificationReason,
+        ambiguityMessage: enrichedIntent.clarificationReason,
       };
     }
 
-    if (intent.intent === "vehicle_search") {
+    if (enrichedIntent.intent === "vehicle_search") {
       const result = await searchVehicles({
-        brand: intent.brand,
-        model: intent.model,
-        minimumWltpRange: intent.minimumWltpRange,
-        minimumRealRange: intent.minimumRealRange,
-        minimumBootCapacity: intent.minimumBootCapacity,
-        minimumSeats: intent.minimumSeats,
-        maximumPrice: intent.maximumPrice,
-        drivetrain: intent.drivetrain,
-        availability: intent.availability,
-        requiredFeature: intent.requiredFeature as never,
+        brand: enrichedIntent.brand,
+        model: enrichedIntent.model,
+        minimumWltpRange: enrichedIntent.minimumWltpRange,
+        minimumRealRange: enrichedIntent.minimumRealRange,
+        minimumBootCapacity: enrichedIntent.minimumBootCapacity,
+        minimumSeats: enrichedIntent.minimumSeats,
+        maximumPrice: enrichedIntent.maximumPrice,
+        drivetrain: enrichedIntent.drivetrain,
+        availability: enrichedIntent.availability,
+        requiredFeature: enrichedIntent.requiredFeature as never,
         limit: 10,
       });
 
       const publishedModels = await searchModelsByPublishedFacts({
-        minimumWltpRange: intent.minimumWltpRange,
-        maximumPrice: intent.maximumPrice,
+        minimumWltpRange: enrichedIntent.minimumWltpRange,
+        maximumPrice: enrichedIntent.maximumPrice,
         limit: 10,
       });
 
@@ -237,32 +358,26 @@ export async function retrieveVehicleContext(
           value: spec.value,
           unit: spec.unit,
           vehicleId: model.id,
+          modelId: model.id,
+          scope: "model" as const,
           sourceId: spec.source.id,
           confidence: "verified" as const,
         })),
       );
 
-      const modelSources: VerifiedSource[] = publishedModels.flatMap((model) =>
-        model.specifications.map((spec) => ({
-          id: spec.source.id,
-          title: spec.source.title,
-          url: spec.source.url,
-          checkedAt: spec.source.checkedAt,
-          sourceType: spec.source.sourceType,
-          vehicleId: model.id,
-        })),
-      );
-
+      const priceContext = await buildPriceContextForModels(publishedModels);
       const sortedVariants =
-        intent.sortByField && result.variants.length > 1
+        enrichedIntent.sortByField && result.variants.length > 1
           ? [...result.variants].sort((left, right) => {
               const leftValue = Number(
-                left.specifications.find((spec) => spec.fieldKey === intent.sortByField)
-                  ?.value ?? 0,
+                left.specifications.find(
+                  (spec) => spec.fieldKey === enrichedIntent.sortByField,
+                )?.value ?? 0,
               );
               const rightValue = Number(
-                right.specifications.find((spec) => spec.fieldKey === intent.sortByField)
-                  ?.value ?? 0,
+                right.specifications.find(
+                  (spec) => spec.fieldKey === enrichedIntent.sortByField,
+                )?.value ?? 0,
               );
               return rightValue - leftValue;
             })
@@ -270,15 +385,31 @@ export async function retrieveVehicleContext(
 
       const context = buildVariantContext(sortedVariants);
       const sourcesById = new Map<string, VerifiedSource>();
-      for (const source of [...context.sources, ...modelSources]) {
+      for (const source of [
+        ...context.sources,
+        ...publishedModels.flatMap((model) =>
+          model.specifications.map((spec) => ({
+            id: spec.source.id,
+            title: spec.source.title,
+            url: spec.source.url,
+            checkedAt: spec.source.checkedAt,
+            sourceType: spec.source.sourceType,
+            vehicleId: model.id,
+          })),
+        ),
+        ...priceContext.sources,
+      ]) {
         sourcesById.set(source.id, source);
       }
 
       return {
-        facts: [...context.facts, ...modelFacts],
+        facts: [...context.facts, ...modelFacts, ...priceContext.facts],
         sources: [...sourcesById.values()],
         commercialConditions: [],
-        hasVerifiedContext: context.hasVerifiedContext || modelFacts.length > 0,
+        hasVerifiedContext:
+          context.hasVerifiedContext ||
+          modelFacts.length > 0 ||
+          priceContext.hasVerifiedContext,
         missingFields: context.missingFields,
         conflicts: context.conflicts,
         ambiguityMessage:
@@ -288,9 +419,9 @@ export async function retrieveVehicleContext(
       };
     }
 
-    if (intent.intent === "vehicle_comparison" && intent.models) {
+    if (enrichedIntent.intent === "vehicle_comparison" && enrichedIntent.models) {
       const comparison = await compareVehicles({
-        identifiers: intent.models,
+        identifiers: enrichedIntent.models,
       });
       const context = buildVariantContext(comparison.variants);
       return {
@@ -304,20 +435,91 @@ export async function retrieveVehicleContext(
       };
     }
 
-    if (intent.intent === "vehicle_detail" || intent.intent === "offer_search") {
+    if (
+      enrichedIntent.intent === "vehicle_detail" ||
+      enrichedIntent.intent === "offer_search"
+    ) {
+      if (enrichedIntent.priorSearch) {
+        const { models, variantsByModel } = await resolveModelsForPriorSearch(
+          enrichedIntent.priorSearch,
+        );
+        const priceContext = await buildPriceContextForModels(
+          models,
+          variantsByModel,
+        );
+        if (priceContext.hasVerifiedContext) {
+          return {
+            facts: priceContext.facts,
+            sources: priceContext.sources,
+            commercialConditions: [],
+            hasVerifiedContext: true,
+          };
+        }
+      }
+
+      if (enrichedIntent.modelIds?.length) {
+        const models = await getModelSummariesByIds(enrichedIntent.modelIds);
+        const priceContext = await buildPriceContextForModels(models);
+        if (priceContext.hasVerifiedContext) {
+          return {
+            facts: priceContext.facts,
+            sources: priceContext.sources,
+            commercialConditions: [],
+            hasVerifiedContext: true,
+          };
+        }
+      }
+
+      if (enrichedIntent.targetModels?.length) {
+        const models = await getModelSummariesBySlugs(enrichedIntent.targetModels);
+        const priceContext = await buildPriceContextForModels(models);
+        if (priceContext.hasVerifiedContext) {
+          return {
+            facts: priceContext.facts,
+            sources: priceContext.sources,
+            commercialConditions: [],
+            hasVerifiedContext: true,
+          };
+        }
+      }
+
       const details = await getVehicleDetails({
-        brand: intent.brand,
-        model: intent.model,
+        brand: enrichedIntent.brand,
+        model: enrichedIntent.model,
       });
 
-      if (intent.intent === "offer_search") {
+      const modelSummaries =
+        enrichedIntent.brand && enrichedIntent.model
+          ? await getModelSummariesBySlugs([
+              { brand: enrichedIntent.brand, model: enrichedIntent.model },
+            ])
+          : [];
+
+      if (enrichedIntent.intent === "offer_search") {
         const offers = await getCurrentOffersTool({
-          brand: intent.brand,
-          model: intent.model,
-          priceLimit: intent.maximumPrice,
-          availabilityStatus: intent.availability,
+          brand: enrichedIntent.brand,
+          model: enrichedIntent.model,
+          priceLimit: enrichedIntent.maximumPrice,
+          availabilityStatus: enrichedIntent.availability,
           limit: 10,
         });
+
+        const priceContext = await buildPriceContextForModels(
+          modelSummaries,
+          new Map(
+            modelSummaries.map((model) => [model.id, details.variants]),
+          ),
+        );
+
+        if (priceContext.hasVerifiedContext) {
+          return {
+            facts: priceContext.facts,
+            sources: priceContext.sources,
+            commercialConditions: [],
+            hasVerifiedContext: true,
+            ambiguityMessage: details.ambiguityMessage,
+          };
+        }
 
         if (offers.length === 0 && details.variants.length === 0) {
           return emptyRetrieval();
@@ -432,8 +634,13 @@ export function buildGroundedChatContext(result: RetrievalResult) {
       `OVĚŘENÁ DATA O VOZECH:\n${result.facts
         .map((fact) => {
           const unit = fact.unit ? ` ${fact.unit}` : "";
-          const vehicle = fact.vehicleId ? ` (varianta ${fact.vehicleId})` : "";
-          return `- ${fact.field}: ${String(fact.value)}${unit}${vehicle} [zdroj ${fact.sourceId}]`;
+          const scope = fact.scope ? ` [${fact.scope}]` : "";
+          const vehicle = fact.vehicleId
+            ? ` (varianta ${fact.vehicleId})`
+            : fact.modelId
+              ? ` (model ${fact.modelId})`
+              : "";
+          return `- ${fact.field}: ${String(fact.value)}${unit}${scope}${vehicle} [zdroj ${fact.sourceId}]`;
         })
         .join("\n")}`,
     result.commercialConditions.length > 0 &&

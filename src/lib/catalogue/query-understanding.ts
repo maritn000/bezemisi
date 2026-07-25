@@ -15,6 +15,22 @@ function extractNumber(text: string, pattern: RegExp) {
   return match ? Number(match[1].replace(/\s/g, "")) : undefined;
 }
 
+function extractMaximumPrice(text: string) {
+  const direct = extractNumber(
+    text,
+    /(?:méně než|pod|do)\s+(\d[\d\s]*)\s*(?:tis|kč|kc)/i,
+  );
+  if (direct) return direct;
+
+  const stoji = extractNumber(
+    text,
+    /stojí.{0,20}(?:méně než|pod|do)\s+(\d[\d\s]*)\s*(?:tis|kč|kc)/i,
+  );
+  if (stoji) return stoji;
+
+  return extractNumber(text, /do\s+(\d[\d\s]*)\s*(tis|kč|kc)/i);
+}
+
 function extractModels(text: string) {
   const models: string[] = [];
   const patterns = [
@@ -91,6 +107,17 @@ export function understandQuery(query: string): QueryIntent {
     });
   }
 
+  const maximumPrice = extractMaximumPrice(query);
+  if (
+    maximumPrice &&
+    /(která auta|které auta|které vozy|která vozidla)/i.test(query)
+  ) {
+    return queryIntentSchema.parse({
+      intent: "vehicle_search",
+      maximumPrice,
+    });
+  }
+
   if (/(kolik stojí|cena|stojí|za kolik)/i.test(query)) {
     const models = extractModels(query);
     const brandModel = models[0]?.split(/\s+/) ?? [];
@@ -98,7 +125,7 @@ export function understandQuery(query: string): QueryIntent {
       intent: "offer_search",
       brand: brandModel[0] ? normalize(brandModel[0]) : undefined,
       model: brandModel.slice(1).join("-").toLowerCase().replace(/\s+/g, "-"),
-      maximumPrice: extractNumber(query, /do\s+(\d[\d\s]*)\s*(tis|kč|kc)/i),
+      maximumPrice: extractMaximumPrice(query),
     });
   }
 
@@ -224,9 +251,36 @@ function getUserMessageTexts(messages: UserMessage[]) {
 }
 
 function isReferentialFollowUp(query: string) {
-  return /(z nich|z těch|u těch|z výše|z předchozí|z toho seznamu|které z nich|která z nich)/i.test(
+  return /(z nich|z těch|u těch|z výše|z předchozí|z toho seznamu|které z nich|která z nich|těchto|těchle)/i.test(
     query,
   );
+}
+
+function isPriceFollowUp(query: string) {
+  const normalized = query.trim();
+  return (
+    /^(kolik stojí|a kolik stojí|jaká je cena|a cena|za kolik)\??$/i.test(
+      normalized,
+    ) ||
+    (isReferentialFollowUp(normalized) &&
+      /(kolik stojí|cena|stojí|za kolik)/i.test(normalized))
+  );
+}
+
+function findPriorVehicleSearchIntent(userTexts: string[]) {
+  const priorIntents = userTexts.map((text) => understandQuery(text));
+  return [...priorIntents]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.intent === "vehicle_search" &&
+        (typeof candidate.minimumWltpRange === "number" ||
+          typeof candidate.maximumPrice === "number" ||
+          typeof candidate.minimumBootCapacity === "number" ||
+          typeof candidate.minimumSeats === "number" ||
+          Boolean(candidate.brand) ||
+          Boolean(candidate.model)),
+    );
 }
 
 export function understandQueryFromMessages(messages: UserMessage[]) {
@@ -236,19 +290,38 @@ export function understandQueryFromMessages(messages: UserMessage[]) {
 
   const intent = understandQuery(latest);
 
-  if (!isReferentialFollowUp(latest) || previous.length === 0) {
+  if (previous.length === 0) {
     return intent;
   }
 
-  const priorIntents = previous.map((text) => understandQuery(text));
-  const priorRangeSearch = [...priorIntents]
-    .reverse()
-    .find(
-      (candidate) =>
-        candidate.intent === "vehicle_search" &&
-        typeof candidate.minimumWltpRange === "number",
-    );
+  if (isPriceFollowUp(latest)) {
+    const priorSearch = findPriorVehicleSearchIntent(previous);
+    if (priorSearch) {
+      return queryIntentSchema.parse({
+        intent: "offer_search",
+        priorSearch: {
+          intent: "vehicle_search",
+          brand: priorSearch.brand,
+          model: priorSearch.model,
+          minimumWltpRange: priorSearch.minimumWltpRange,
+          minimumRealRange: priorSearch.minimumRealRange,
+          minimumBootCapacity: priorSearch.minimumBootCapacity,
+          minimumSeats: priorSearch.minimumSeats,
+          maximumPrice: priorSearch.maximumPrice,
+          drivetrain: priorSearch.drivetrain,
+          availability: priorSearch.availability,
+          requiredFeature: priorSearch.requiredFeature,
+          sortByField: priorSearch.sortByField,
+        },
+      });
+    }
+  }
 
+  if (!isReferentialFollowUp(latest)) {
+    return intent;
+  }
+
+  const priorRangeSearch = findPriorVehicleSearchIntent(previous);
   if (!priorRangeSearch?.minimumWltpRange) {
     return intent;
   }
