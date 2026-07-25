@@ -38,7 +38,7 @@ function extractModels(text: string) {
     /\b(volvo\s+ex\d+)\b/i,
     /\b(hyundai\s+inster)\b/i,
     /\b(hyundai\s+ioniq\s*\d*)\b/i,
-    /\b(hyundai\s+kona)\b/i,
+    /\b(hyundai\s+kona(?:\s+electric)?)\b/i,
     /\b(bmw\s+ix\d+)\b/i,
     /\b(škoda\s+\w+)\b/i,
     /\b(skoda\s+\w+)\b/i,

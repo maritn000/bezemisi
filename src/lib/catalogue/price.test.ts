@@ -328,6 +328,18 @@ test("price follow-up after range search resolves to offer_search with prior con
   assert.equal(intent.priorSearch?.minimumWltpRange, 450);
 });
 
+test("direct price questions resolve complete model names", () => {
+  const kia = understandQuery("Kolik stojí Kia EV3?");
+  assert.equal(kia.intent, "offer_search");
+  assert.equal(kia.brand, "kia");
+  assert.equal(kia.model, "ev3");
+
+  const kona = understandQuery("Kolik stojí Hyundai KONA Electric?");
+  assert.equal(kona.intent, "offer_search");
+  assert.equal(kona.brand, "hyundai");
+  assert.equal(kona.model, "kona-electric");
+});
+
 test("formatPriceSummaryForModels uses Czech multi-vehicle structure", async () => {
   const { formatPriceSummaryForModels } = await import(
     "@/lib/catalogue/price-retrieval"

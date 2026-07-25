@@ -24,3 +24,12 @@ export function stripInternalIdentifiers(text: string) {
     .replace(/\s+([,.;:!?])/g, "$1")
     .trim();
 }
+
+/**
+ * Sanitize only after all streamed fragments have been joined. Sanitizing each
+ * fragment separately is unsafe: UUIDs can span fragment boundaries and
+ * trimming fragments removes legitimate spaces between words.
+ */
+export function sanitizeStreamedTextFragments(fragments: string[]) {
+  return stripInternalIdentifiers(fragments.join(""));
+}

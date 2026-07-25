@@ -10,7 +10,8 @@ import {
 } from "@/lib/catalogue/catalogue-service";
 import {
   buildPriceLookupDiagnostic,
-  formatPriceSummaryForModels,
+  formatPriceSummaryLines,
+  formatResolvedPriceForUser,
   formatResolvedPriceForGrounding,
   resolveBestPriceForModel,
   resolvedPriceToFact,
@@ -74,6 +75,7 @@ export type RetrievalResult = {
   ambiguityMessage?: string;
   catalogueContext?: CatalogueConversationContext | null;
   priceSummary?: string;
+  directAnswer?: string;
   priceDiagnostics?: PriceLookupDiagnostic[];
 };
 
@@ -208,6 +210,7 @@ async function buildPriceContextForModels(
   const facts: VerifiedFact[] = [];
   const sources: VerifiedSource[] = [];
   const priceLines: string[] = [];
+  const userPriceLines: string[] = [];
   const resolvedPrices: ResolvedPrice[] = [];
   const diagnostics: PriceLookupDiagnostic[] = [];
 
@@ -224,6 +227,9 @@ async function buildPriceContextForModels(
     diagnostics.push(buildPriceLookupDiagnostic(model, resolved));
 
     if (!resolved) {
+      userPriceLines.push(
+        `- ${normalizeVehicleTitle(model.brandName, model.name)} — ověřenou aktuální cenu zatím nemám.`,
+      );
       priceLines.push(
         `- ${normalizeVehicleTitle(model.brandName, model.name)}: ověřenou aktuální cenu zatím nemám (žádná ověřená modelová, variantní ani aktuální nabídková cena).`,
       );
@@ -231,6 +237,7 @@ async function buildPriceContextForModels(
     }
 
     resolvedPrices.push(resolved);
+    userPriceLines.push(`- ${formatResolvedPriceForUser(resolved)}`);
     facts.push(resolvedPriceToFact(resolved));
     priceLines.push(formatResolvedPriceForGrounding(resolved));
     sources.push({
@@ -254,7 +261,7 @@ async function buildPriceContextForModels(
     priceLines,
     resolvedPrices,
     diagnostics,
-    priceSummary: formatPriceSummaryForModels(resolvedPrices),
+    priceSummary: formatPriceSummaryLines(userPriceLines),
     hasVerifiedContext: facts.length > 0 || priceLines.length > 0,
   };
 }
@@ -385,16 +392,7 @@ export function deduplicateVerifiedSources(sources: VerifiedSource[]) {
     }
   }
 
-  const deduped = [...byUrl.values(), ...withoutUrl];
-  const seenTitles = new Set<string>();
-  return deduped.filter((source) => {
-    const key = source.title.toLowerCase();
-    if (seenTitles.has(key) && source.url) {
-      return false;
-    }
-    seenTitles.add(key);
-    return true;
-  });
+  return [...byUrl.values(), ...withoutUrl];
 }
 
 export async function retrieveVehicleContext(
@@ -459,7 +457,35 @@ export async function retrieveVehicleContext(
         limit: 10,
       });
 
-      const modelFacts: VerifiedFact[] = publishedModels.flatMap((model) =>
+      const variantModelIdentifiers = [
+        ...new Map(
+          result.variants.map((variant) => [
+            `${variant.brandSlug}/${variant.modelSlug}`,
+            { brand: variant.brandSlug, model: variant.modelSlug },
+          ]),
+        ).values(),
+      ];
+      const variantModels = await getModelSummariesBySlugs(
+        variantModelIdentifiers,
+      );
+      const modelsById = new Map(
+        [...publishedModels, ...variantModels].map((model) => [model.id, model]),
+      );
+      const searchModels = [...modelsById.values()];
+      const variantsByModel = new Map<string, CatalogueVariantSummary[]>();
+      for (const variant of result.variants) {
+        const model = variantModels.find(
+          (candidate) =>
+            candidate.brandSlug === variant.brandSlug &&
+            candidate.slug === variant.modelSlug,
+        );
+        if (!model) continue;
+        const variants = variantsByModel.get(model.id) ?? [];
+        variants.push(variant);
+        variantsByModel.set(model.id, variants);
+      }
+
+      const modelFacts: VerifiedFact[] = searchModels.flatMap((model) =>
         model.specifications.map((spec) => ({
           field:
             spec.fieldKey === "published_model_max_wltp_range_km"
@@ -482,7 +508,10 @@ export async function retrieveVehicleContext(
         })),
       );
 
-      const priceContext = await buildPriceContextForModels(publishedModels);
+      const priceContext = await buildPriceContextForModels(
+        searchModels,
+        variantsByModel,
+      );
       const sortedVariants =
         enrichedIntent.sortByField && result.variants.length > 1
           ? [...result.variants].sort((left, right) => {
@@ -503,13 +532,13 @@ export async function retrieveVehicleContext(
       const context = buildVariantContext(sortedVariants);
       const catalogueContext = extractCatalogueContextFromRetrieval({
         modelIds: [
-          ...publishedModels.map((model) => model.id),
+          ...searchModels.map((model) => model.id),
           ...priceContext.facts
             .map((fact) => fact.modelId)
             .filter((id): id is string => Boolean(id)),
         ],
         variantIds: sortedVariants.map((variant) => variant.id),
-        targetModels: publishedModels.map((model) => ({
+        targetModels: searchModels.map((model) => ({
           brand: model.brandSlug,
           model: model.slug,
         })),
@@ -531,7 +560,7 @@ export async function retrieveVehicleContext(
       const sourcesById = new Map<string, VerifiedSource>();
       for (const source of [
         ...context.sources,
-        ...publishedModels.flatMap((model) =>
+        ...searchModels.flatMap((model) =>
           model.specifications.map((spec) => ({
             id: spec.source.id,
             title: normalizeVehicleTitle(
@@ -603,6 +632,10 @@ export async function retrieveVehicleContext(
               modelIds: enrichedIntent.modelIds,
             }),
             priceSummary: priceContext.priceSummary,
+            directAnswer:
+              enrichedIntent.intent === "offer_search"
+                ? priceContext.priceSummary
+                : undefined,
             priceDiagnostics: priceContext.diagnostics,
           };
         }
@@ -622,6 +655,10 @@ export async function retrieveVehicleContext(
               targetModels: enrichedIntent.targetModels,
             }),
             priceSummary: priceContext.priceSummary,
+            directAnswer:
+              enrichedIntent.intent === "offer_search"
+                ? priceContext.priceSummary
+                : undefined,
             priceDiagnostics: priceContext.diagnostics,
           };
         }
@@ -646,6 +683,10 @@ export async function retrieveVehicleContext(
               priorSearch: enrichedIntent.priorSearch,
             }),
             priceSummary: priceContext.priceSummary,
+            directAnswer:
+              enrichedIntent.intent === "offer_search"
+                ? priceContext.priceSummary
+                : undefined,
             priceDiagnostics: priceContext.diagnostics,
           };
         }
@@ -687,6 +728,7 @@ export async function retrieveVehicleContext(
             hasVerifiedContext: true,
             ambiguityMessage: details.ambiguityMessage,
             priceSummary: priceContext.priceSummary,
+            directAnswer: priceContext.priceSummary,
             priceDiagnostics: priceContext.diagnostics,
           };
         }
@@ -878,6 +920,7 @@ export function mergeRetrievalResults(
     ambiguityMessage: vehicle.ambiguityMessage ?? commercial.ambiguityMessage,
     catalogueContext: vehicle.catalogueContext ?? commercial.catalogueContext,
     priceSummary: vehicle.priceSummary ?? commercial.priceSummary,
+    directAnswer: vehicle.directAnswer ?? commercial.directAnswer,
     priceDiagnostics: vehicle.priceDiagnostics ?? commercial.priceDiagnostics,
   };
 }

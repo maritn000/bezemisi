@@ -32,7 +32,10 @@ import {
   getConfiguredChatModelName,
   isOpenAIConfigured,
 } from "./model-config";
-import { stripInternalIdentifiers } from "./output-safeguard";
+import {
+  sanitizeStreamedTextFragments,
+  stripInternalIdentifiers,
+} from "./output-safeguard";
 import { isClearlyOutOfScope } from "./scope";
 import { buildSystemPrompt, REFUSAL } from "./system-prompt";
 import type { ChatRequest } from "./validation";
@@ -60,7 +63,11 @@ function persistenceEnabled() {
   return getConversationRepository().enabled;
 }
 
-function staticAssistantResponse(text: string, sources: VerifiedSource[] = []) {
+function staticAssistantResponse(
+  text: string,
+  sources: VerifiedSource[] = [],
+  catalogueContextPart?: ReturnType<typeof buildCatalogueContextPart>,
+) {
   const sanitizedText = stripInternalIdentifiers(text);
   const partId = crypto.randomUUID();
   const stream = createUIMessageStream<UIMessage>({
@@ -68,6 +75,9 @@ function staticAssistantResponse(text: string, sources: VerifiedSource[] = []) {
       writer.write({ type: "text-start", id: partId });
       writer.write({ type: "text-delta", id: partId, delta: sanitizedText });
       writer.write({ type: "text-end", id: partId });
+      if (catalogueContextPart) {
+        writer.write(catalogueContextPart);
+      }
       for (const source of deduplicateVerifiedSources(sources)) {
         if (!source.url) continue;
         writer.write({
@@ -84,19 +94,43 @@ function staticAssistantResponse(text: string, sources: VerifiedSource[] = []) {
 }
 
 function createOutputSafeguardTransform() {
-  return () =>
-    new TransformStream({
+  return () => {
+    const textFragments = new Map<string, string[]>();
+
+    return new TransformStream({
       transform(chunk, controller) {
-        if (chunk.type === "text-delta" && typeof chunk.text === "string") {
-          controller.enqueue({
-            ...chunk,
-            text: stripInternalIdentifiers(chunk.text),
-          });
+        if (chunk.type === "text-start") {
+          textFragments.set(chunk.id, []);
+          controller.enqueue(chunk);
           return;
         }
+
+        if (chunk.type === "text-delta" && typeof chunk.text === "string") {
+          const fragments = textFragments.get(chunk.id) ?? [];
+          fragments.push(chunk.text);
+          textFragments.set(chunk.id, fragments);
+          return;
+        }
+
+        if (chunk.type === "text-end") {
+          const fragments = textFragments.get(chunk.id) ?? [];
+          const sanitized = sanitizeStreamedTextFragments(fragments);
+          if (sanitized) {
+            controller.enqueue({
+              type: "text-delta",
+              id: chunk.id,
+              text: sanitized,
+            });
+          }
+          textFragments.delete(chunk.id);
+          controller.enqueue(chunk);
+          return;
+        }
+
         controller.enqueue(chunk);
       },
     });
+  };
 }
 
 async function resolveConversationId(_requestedId?: string) {
@@ -143,20 +177,6 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
     return staticAssistantResponse(REFUSAL);
   }
 
-  if (!isOpenAIConfigured()) {
-    logChatError({
-      category: "openai_not_configured",
-      message: "OPENAI_API_KEY is not configured",
-      model: modelName,
-      openaiConfigured: false,
-      persistenceEnabled: persistenceEnabled(),
-    });
-    return Response.json(
-      { error: CHAT_ERRORS.missingOpenAI },
-      { status: 503 },
-    );
-  }
-
   const [vehicleContext, commercialContext] = await Promise.all([
     retrieveVehicleContext(query, {
       messages: mapMessagesForRetrieval(parsedBody.messages),
@@ -175,6 +195,31 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
         groundedContext.sources.filter((source) => Boolean(source.url)),
       )
     : [];
+
+  // Price answers are application-controlled: retrieval has already selected
+  // and labelled every price. Do not let the language model omit, merge, or
+  // reinterpret those database results.
+  if (retrieval.directAnswer) {
+    return staticAssistantResponse(
+      retrieval.directAnswer,
+      sourcesForUi,
+      catalogueContextPart,
+    );
+  }
+
+  if (!isOpenAIConfigured()) {
+    logChatError({
+      category: "openai_not_configured",
+      message: "OPENAI_API_KEY is not configured",
+      model: modelName,
+      openaiConfigured: false,
+      persistenceEnabled: persistenceEnabled(),
+    });
+    return Response.json(
+      { error: CHAT_ERRORS.missingOpenAI },
+      { status: 503 },
+    );
+  }
 
   const { model, temperature } = getChatModelConfig();
   const conversationId = await resolveConversationId(

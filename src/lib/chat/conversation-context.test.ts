@@ -20,6 +20,7 @@ test("buildCatalogueContextPart emits structured catalogue metadata", () => {
     modelIds: ["model-1", "model-2"],
     variantIds: [],
     targetModels: [{ brand: "kia", model: "ev3" }],
+    priorSearch: null,
   });
 });
 
@@ -54,4 +55,32 @@ test("resolveConversationContext reads structured assistant catalogue context", 
 
 test("extractCatalogueContextFromRetrieval returns null for empty input", () => {
   assert.equal(extractCatalogueContextFromRetrieval({}), null);
+});
+
+test("structured catalogue context preserves prior search filters", () => {
+  const priorSearch = {
+    intent: "vehicle_search" as const,
+    minimumWltpRange: 450,
+    maximumPrice: 1_200_000,
+  };
+  const part = buildCatalogueContextPart({
+    modelIds: ["model-a"],
+    priorSearch,
+  });
+
+  assert.ok(part);
+  const context = resolveConversationContext([
+    {
+      role: "assistant",
+      parts: [part!],
+    },
+    {
+      role: "user",
+      parts: [{ text: "Kolik stojí?" }],
+    },
+  ]);
+
+  assert.deepEqual(context.modelIds, ["model-a"]);
+  assert.equal(context.priorSearch?.minimumWltpRange, 450);
+  assert.equal(context.priorSearch?.maximumPrice, 1_200_000);
 });

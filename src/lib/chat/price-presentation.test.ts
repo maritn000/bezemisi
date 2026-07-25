@@ -4,6 +4,7 @@ import test from "node:test";
 import { normalizeVehicleTitle } from "@/lib/catalogue/source-title";
 import {
   containsInternalIdentifier,
+  sanitizeStreamedTextFragments,
   stripInternalIdentifiers,
 } from "@/lib/chat/output-safeguard";
 import {
@@ -40,6 +41,17 @@ test("stripInternalIdentifiers removes internal source tags", () => {
     "Cena je 500 000 Kč [zdroj 425a4793-43e3-4cde-8170-b9e73f7e89c2]",
   );
   assert.equal(output, "Cena je 500 000 Kč");
+});
+
+test("stream safeguard preserves spaces and removes UUID split across fragments", () => {
+  const output = sanitizeStreamedTextFragments([
+    "Cena modelu ",
+    "začíná na ",
+    "1 133 000 Kč [2bb67414-5aef-",
+    "4c84-b1c0-6f92c051c040].",
+  ]);
+
+  assert.equal(output, "Cena modelu začíná na 1 133 000 Kč.");
 });
 
 test("deduplicateVerifiedSources removes duplicate URLs and titles", () => {
