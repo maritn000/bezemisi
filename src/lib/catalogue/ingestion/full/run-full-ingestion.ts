@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { createDb } from "@/db/create-client";
 import { getNormalizedDatabaseUrl } from "@/env";
-import { catalogueIngestionRuns } from "@/db/schema";
+import { catalogueIngestionRuns, vehicleBrands, vehicleModels } from "@/db/schema";
 import { BEZEMISI_BASE_URL } from "@/lib/catalogue/constants";
 import { VERIFIED_VARIANT_SEEDS } from "@/lib/catalogue/ingestion/seed-data";
 import { crawlUrl } from "@/lib/catalogue/ingestion/crawl/crawler";
@@ -48,13 +48,14 @@ export type FullIngestionOptions = {
   resume?: boolean;
   runId?: string;
   skipManufacturerSupplement?: boolean;
+  ingestionRunId?: string;
 };
 
 export type FullIngestionSummary = {
   runId: string;
   ingestionRunId: string;
   dryRun: boolean;
-  status: "completed" | "completed_with_warnings" | "failed";
+  status: "in_progress" | "completed" | "completed_with_warnings" | "failed";
   discovered: {
     catalogueModels: number;
     modelPages: number;
@@ -81,6 +82,43 @@ const CATALOGUE_ROOT = `${BEZEMISI_BASE_URL}/elektromobily`;
 const ACTION_ROOT = `${BEZEMISI_BASE_URL}/akcni-nabidky`;
 const LEASING_ROOT = `${BEZEMISI_BASE_URL}/operativni-leasing`;
 const STOCK_ROOT = "https://auto.bezemisi.cz/nabidka-vozu/";
+const STOCK_BATCH_SIZE = 35;
+
+type PersistedIngestionState = {
+  summary?: FullIngestionSummary;
+  stockPageIndex?: number;
+  stockUrls?: string[];
+  phasesComplete?: string[];
+};
+
+async function loadModelRegistryFromDb(
+  db: NonNullable<ReturnType<typeof createDb>>,
+) {
+  const joined = await db
+    .select({
+      modelId: vehicleModels.id,
+      modelSlug: vehicleModels.slug,
+      brandSlug: vehicleBrands.slug,
+    })
+    .from(vehicleModels)
+    .innerJoin(vehicleBrands, eq(vehicleModels.brandId, vehicleBrands.id));
+
+  const registry = new Map<
+    string,
+    { brandSlug: string; modelSlug: string; modelId: string; detailUrl: string | null }
+  >();
+
+  for (const row of joined) {
+    registry.set(modelKey(row.brandSlug, row.modelSlug), {
+      brandSlug: row.brandSlug,
+      modelSlug: row.modelSlug,
+      modelId: row.modelId,
+      detailUrl: null,
+    });
+  }
+
+  return registry;
+}
 
 function modelKey(brandSlug: string, modelSlug: string) {
   return `${brandSlug}/${modelSlug}`;
@@ -114,7 +152,7 @@ export async function runFullCatalogueIngestion(
     runId,
     ingestionRunId: "dry-run",
     dryRun,
-    status: "completed",
+    status: "in_progress",
     discovered: {
       catalogueModels: 0,
       modelPages: 0,
@@ -139,29 +177,62 @@ export async function runFullCatalogueIngestion(
 
   const db = dryRun ? null : createDb(getNormalizedDatabaseUrl());
 
-  let ingestionRunId = "dry-run";
+  let ingestionRunId = options.ingestionRunId ?? "dry-run";
+  let stockPageIndex = 0;
+  let stockUrlList: string[] | null = null;
+  let resumeAtStock = false;
+
   if (!dryRun && db) {
-    const [run] = await db
-      .insert(catalogueIngestionRuns)
-      .values({
-        runType: "full_crawl",
-        status: "running",
-        startedAt: observedAt,
-      })
-      .returning();
-    ingestionRunId = run!.id;
+    if (resume && ingestionRunId === "dry-run") {
+      const [existingRun] = await db
+        .select()
+        .from(catalogueIngestionRuns)
+        .where(eq(catalogueIngestionRuns.status, "running"))
+        .limit(1);
+
+      if (existingRun) {
+        ingestionRunId = existingRun.id;
+        const persisted = existingRun.metadata as PersistedIngestionState;
+        if (persisted.summary) {
+          Object.assign(summary, persisted.summary);
+        }
+        stockPageIndex = persisted.stockPageIndex ?? 0;
+        stockUrlList = persisted.stockUrls ?? null;
+        resumeAtStock = Boolean(
+          (persisted.stockPageIndex ?? 0) > 0 ||
+            (persisted.stockUrls?.length ?? 0) > 0 ||
+            ((persisted.summary?.discovered?.catalogueModels ?? 0) > 0 &&
+              (persisted.summary?.stored?.models ?? 0) > 0),
+        );
+      }
+    }
+
+    if (ingestionRunId === "dry-run") {
+      const [run] = await db
+        .insert(catalogueIngestionRuns)
+        .values({
+          runType: "full_crawl",
+          status: "running",
+          startedAt: observedAt,
+        })
+        .returning();
+      ingestionRunId = run!.id;
+    }
     summary.ingestionRunId = ingestionRunId;
   }
 
   const manifest = await loadIngestionManifest(runId, ingestionRunId);
   const crawlOptions = { runId, manifest, resume };
 
-  const modelRegistry = new Map<
-    string,
-    { brandSlug: string; modelSlug: string; modelId: string; detailUrl: string | null }
-  >();
+  const modelRegistry = resumeAtStock && db
+    ? await loadModelRegistryFromDb(db)
+    : new Map<
+        string,
+        { brandSlug: string; modelSlug: string; modelId: string; detailUrl: string | null }
+      >();
 
   try {
+    if (!resumeAtStock) {
     const catalogueCrawl = await crawlUrl(
       CATALOGUE_ROOT,
       "catalogue_root",
@@ -586,25 +657,33 @@ export async function runFullCatalogueIngestion(
         summary.stored.leasingConditions += 1;
       }
     }
-
-    const stockCrawl = await crawlUrl(STOCK_ROOT, "stock_list", crawlOptions);
-    const stockUrls = new Set<string>(discoverStockUrls(stockCrawl.html));
-    for (const listUrl of stockUrls) {
-      if (!listUrl.endsWith(".html")) {
-        const listCrawl = await crawlUrl(
-          listUrl,
-          "stock_list",
-          crawlOptions,
-          STOCK_ROOT,
-        );
-        for (const detailUrl of discoverStockUrls(listCrawl.html)) {
-          stockUrls.add(detailUrl);
-        }
-      }
     }
 
-    for (const stockUrl of stockUrls) {
-      if (!stockUrl.endsWith(".html")) continue;
+    if (!stockUrlList) {
+      const stockCrawl = await crawlUrl(STOCK_ROOT, "stock_list", crawlOptions);
+      const stockUrls = new Set<string>(discoverStockUrls(stockCrawl.html));
+      for (const listUrl of stockUrls) {
+        if (!listUrl.endsWith(".html")) {
+          const listCrawl = await crawlUrl(
+            listUrl,
+            "stock_list",
+            crawlOptions,
+            STOCK_ROOT,
+          );
+          for (const detailUrl of discoverStockUrls(listCrawl.html)) {
+            stockUrls.add(detailUrl);
+          }
+        }
+      }
+      stockUrlList = [...stockUrls].filter((url) => url.endsWith(".html"));
+    }
+
+    const stockBatch = stockUrlList.slice(
+      stockPageIndex,
+      stockPageIndex + STOCK_BATCH_SIZE,
+    );
+
+    for (const stockUrl of stockBatch) {
       const crawl = await crawlUrl(
         stockUrl,
         "stock_detail",
@@ -666,21 +745,30 @@ export async function runFullCatalogueIngestion(
       }
     }
 
+    stockPageIndex += stockBatch.length;
+    const stockComplete = stockPageIndex >= stockUrlList.length;
+
     await saveIngestionManifest(manifest, runId, ingestionRunId);
 
     if (!dryRun && db) {
-      summary.status =
-        summary.errorsCount > 0
+      const runStatus = !stockComplete
+        ? "running"
+        : summary.errorsCount > 0
           ? "completed_with_warnings"
           : summary.warningsCount > 0
             ? "completed_with_warnings"
             : "completed";
 
+      summary.status =
+        runStatus === "running"
+          ? "in_progress"
+          : (runStatus as FullIngestionSummary["status"]);
+
       await db
         .update(catalogueIngestionRuns)
         .set({
-          status: summary.status,
-          completedAt: new Date(),
+          status: runStatus,
+          completedAt: stockComplete ? new Date() : null,
           pagesDiscovered:
             summary.discovered.catalogueModels +
             summary.discovered.modelPages +
@@ -694,10 +782,21 @@ export async function runFullCatalogueIngestion(
           offersCreated: summary.stored.offers,
           warningsCount: summary.warningsCount,
           errorsCount: summary.errorsCount,
-          metadata: summary,
+          metadata: {
+            summary,
+            stockPageIndex,
+            stockUrls: stockUrlList,
+            phasesComplete: stockComplete
+              ? ["pre_stock", "stock"]
+              : resumeAtStock
+                ? ["pre_stock"]
+                : ["pre_stock"],
+          },
           updatedAt: new Date(),
         })
         .where(eq(catalogueIngestionRuns.id, ingestionRunId));
+    } else if (stockComplete) {
+      summary.status = "completed";
     }
   } catch (error) {
     summary.errorsCount += 1;
