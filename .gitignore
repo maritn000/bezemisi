@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# catalogue crawl cache (fixtures are committed separately if needed)
+.catalogue-cache/pages/
+.catalogue-cache/crawl-manifest-*.json
+.catalogue-cache/image-hashes.json

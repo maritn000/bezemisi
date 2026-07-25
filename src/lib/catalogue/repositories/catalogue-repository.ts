@@ -14,9 +14,11 @@ function getDb() {
 import { and, asc, desc, eq, gte, ilike, inArray, lte, sql } from "drizzle-orm";
 
 import {
+  catalogueIngestionIssues,
   commercialConditions,
   sourcePages,
   vehicleBrands,
+  vehicleModelSpecifications,
   vehicleModels,
   vehicleOffers,
   vehicleSpecifications,
@@ -166,6 +168,170 @@ function mapOffer(
     source,
     isCurrent: offer.isCurrent,
   };
+}
+
+export type CatalogueModelSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  brandName: string;
+  brandSlug: string;
+  category: string | null;
+  mainImagePath: string | null;
+  specifications: VerifiedSpecification[];
+  currentOffers: CatalogueOffer[];
+};
+
+function mapModelSpecification(
+  spec: typeof vehicleModelSpecifications.$inferSelect,
+  source: SourceReference,
+): VerifiedSpecification {
+  const value =
+    spec.valueType === "number"
+      ? Number(spec.numericValue)
+      : spec.valueType === "boolean"
+        ? Boolean(spec.booleanValue)
+        : String(spec.textValue ?? "");
+
+  return {
+    fieldKey: spec.fieldKey,
+    value,
+    unit: spec.unit,
+    verificationStatus: spec.verificationStatus,
+    source,
+  };
+}
+
+export async function getModelSpecifications(modelId: string) {
+  const rows = await getDb()
+    .select({
+      spec: vehicleModelSpecifications,
+      page: sourcePages,
+    })
+    .from(vehicleModelSpecifications)
+    .innerJoin(
+      sourcePages,
+      eq(vehicleModelSpecifications.sourcePageId, sourcePages.id),
+    )
+    .where(eq(vehicleModelSpecifications.modelId, modelId));
+
+  const grouped = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const bucket = grouped.get(row.spec.fieldKey) ?? [];
+    bucket.push(row);
+    grouped.set(row.spec.fieldKey, bucket);
+  }
+
+  const selected: VerifiedSpecification[] = [];
+  for (const [fieldKey, bucket] of grouped) {
+    const verified = bucket.filter((row) => row.spec.verificationStatus === "verified");
+    const candidates = verified.length > 0 ? verified : bucket;
+    const preferred = [...candidates].sort((left, right) => {
+      const leftPriority = left.spec.sourcePriority ?? 100;
+      const rightPriority = right.spec.sourcePriority ?? 100;
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      return (
+        new Date(right.spec.observedAt ?? 0).getTime() -
+        new Date(left.spec.observedAt ?? 0).getTime()
+      );
+    })[0];
+    if (!preferred) continue;
+    selected.push(
+      mapModelSpecification(
+        preferred.spec,
+        mapSourceReference(preferred.page, { modelId }),
+      ),
+    );
+  }
+
+  return selected;
+}
+
+export async function getModelSummaries() {
+  const models = await listPresentedModels();
+  const summaries: CatalogueModelSummary[] = [];
+
+  for (const { model, brand } of models) {
+    const specifications = await getModelSpecifications(model.id);
+    const staleCutoff = new Date();
+    staleCutoff.setDate(staleCutoff.getDate() - OFFER_STALE_DAYS);
+
+    const offerRows = await getDb()
+      .select({
+        offer: vehicleOffers,
+        page: sourcePages,
+      })
+      .from(vehicleOffers)
+      .innerJoin(sourcePages, eq(vehicleOffers.sourcePageId, sourcePages.id))
+      .where(
+        and(
+          eq(vehicleOffers.modelId, model.id),
+          eq(vehicleOffers.isCurrent, true),
+          gte(vehicleOffers.observedAt, staleCutoff),
+        ),
+      );
+
+    summaries.push({
+      id: model.id,
+      name: model.name,
+      slug: model.slug,
+      brandName: brand.name,
+      brandSlug: brand.slug,
+      category: model.vehicleCategory,
+      mainImagePath: model.mainImagePath,
+      specifications,
+      currentOffers: offerRows.map((row) =>
+        mapOffer(row.offer, mapSourceReference(row.page, { modelId: model.id })),
+      ),
+    });
+  }
+
+  return summaries;
+}
+
+export async function searchModelsByPublishedFacts(filters: {
+  minimumWltpRange?: number;
+  maximumPrice?: number;
+  limit?: number;
+}) {
+  const models = await getModelSummaries();
+  const filtered = models.filter((model) => {
+    const specMap = new Map(
+      model.specifications.map((spec) => [spec.fieldKey, spec.value]),
+    );
+
+    if (filters.minimumWltpRange !== undefined) {
+      const publishedMax = specMap.get("published_model_max_wltp_range_km");
+      if (
+        typeof publishedMax !== "number" ||
+        publishedMax < filters.minimumWltpRange
+      ) {
+        return false;
+      }
+    }
+
+    if (filters.maximumPrice !== undefined) {
+      const priceUnavailable = specMap.get("published_price_unavailable");
+      if (priceUnavailable === true) return false;
+      const publishedPrice = specMap.get("published_starting_price_czk");
+      const offerPrices = model.currentOffers
+        .map((offer) => offer.currentPrice)
+        .filter((price): price is number => price !== null);
+      const minPrice =
+        offerPrices.length > 0
+          ? Math.min(...offerPrices)
+          : typeof publishedPrice === "number"
+            ? publishedPrice
+            : null;
+      if (minPrice === null || minPrice > filters.maximumPrice) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  return filtered.slice(0, filters.limit ?? 10);
 }
 
 export async function listPresentedModels() {
@@ -463,9 +629,9 @@ export async function getCurrentOffers(filters: {
     })
     .from(vehicleOffers)
     .innerJoin(sourcePages, eq(vehicleOffers.sourcePageId, sourcePages.id))
-    .innerJoin(vehicleVariants, eq(vehicleOffers.variantId, vehicleVariants.id))
-    .innerJoin(vehicleModels, eq(vehicleVariants.modelId, vehicleModels.id))
-    .innerJoin(vehicleBrands, eq(vehicleModels.brandId, vehicleBrands.id))
+    .leftJoin(vehicleVariants, eq(vehicleOffers.variantId, vehicleVariants.id))
+    .leftJoin(vehicleModels, sql`${vehicleModels.id} = coalesce(${vehicleVariants.modelId}, ${vehicleOffers.modelId})`)
+    .leftJoin(vehicleBrands, eq(vehicleModels.brandId, vehicleBrands.id))
     .where(
       and(
         eq(vehicleOffers.isCurrent, true),
@@ -501,11 +667,14 @@ export async function getCurrentOffers(filters: {
   return rows.map((row) => ({
     ...mapOffer(
       row.offer,
-      mapSourceReference(row.page, { variantId: row.variant.id }),
+      mapSourceReference(row.page, {
+        variantId: row.variant?.id,
+        modelId: row.model?.id,
+      }),
     ),
-    brandName: row.brand.name,
-    modelName: row.model.name,
-    variantName: row.variant.name,
+    brandName: row.brand?.name ?? "Neznámá značka",
+    modelName: row.model?.name ?? row.offer.title,
+    variantName: row.variant?.name ?? "Modelová nabídka",
   }));
 }
 
@@ -582,15 +751,24 @@ export async function countCatalogueStats() {
   const [sourcePageCount] = await getDb()
     .select({ count: sql<number>`count(*)::int` })
     .from(sourcePages);
+  const [verifiedModelFacts] = await getDb()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(vehicleModelSpecifications)
+    .where(eq(vehicleModelSpecifications.verificationStatus, "verified"));
+  const [issues] = await getDb()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(catalogueIngestionIssues);
 
   return {
     brands: brands?.count ?? 0,
     models: models?.count ?? 0,
     variants: variants?.count ?? 0,
     verifiedFacts: verifiedFacts?.count ?? 0,
+    verifiedModelFacts: verifiedModelFacts?.count ?? 0,
     conflictingFacts: conflictingFacts?.count ?? 0,
     currentOffers: currentOffers?.count ?? 0,
     commercialConditions: conditions?.count ?? 0,
     sourcePages: sourcePageCount?.count ?? 0,
+    ingestionIssues: issues?.count ?? 0,
   };
 }

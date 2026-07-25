@@ -26,7 +26,25 @@ export const SPEC_FIELD_KEYS = [
   "warranty_battery_km",
 ] as const;
 
+/** Model-level published facts from catalogue cards and marketing pages. */
+export const MODEL_LEVEL_FIELD_KEYS = [
+  "published_starting_price_czk",
+  "published_price_unavailable",
+  "published_model_max_wltp_range_km",
+  "published_operating_cost_min_czk_per_100km",
+  "published_operating_cost_max_czk_per_100km",
+  "published_vat_status",
+  "published_marketing_description",
+] as const;
+
+export const ALL_FIELD_KEYS = [
+  ...SPEC_FIELD_KEYS,
+  ...MODEL_LEVEL_FIELD_KEYS,
+] as const;
+
 export type SpecFieldKey = (typeof SPEC_FIELD_KEYS)[number];
+export type ModelLevelFieldKey = (typeof MODEL_LEVEL_FIELD_KEYS)[number];
+export type CatalogueFieldKey = (typeof ALL_FIELD_KEYS)[number];
 
 export const IMPORTANT_SPEC_FIELDS: SpecFieldKey[] = [
   "wltp_range_km",

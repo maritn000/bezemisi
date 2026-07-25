@@ -12,6 +12,8 @@ export function VehicleGrid({
     tagline?: string;
     rangeKm?: number | null;
     priceFrom?: number | null;
+    priceLabel?: string | null;
+    operatingCostLabel?: string | null;
     observedAt?: string | null;
   }>;
 }) {

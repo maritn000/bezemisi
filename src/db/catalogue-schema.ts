@@ -231,6 +231,64 @@ export const sourcePages = pgTable(
   ],
 );
 
+export const vehicleModelSpecifications = pgTable(
+  "vehicle_model_specifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    modelId: uuid("model_id")
+      .notNull()
+      .references(() => vehicleModels.id, { onDelete: "cascade" }),
+    fieldKey: text("field_key").notNull(),
+    numericValue: numeric("numeric_value", { precision: 14, scale: 4 }),
+    textValue: text("text_value"),
+    booleanValue: boolean("boolean_value"),
+    unit: text("unit"),
+    valueType: specValueTypeEnum("value_type").notNull(),
+    sourcePageId: uuid("source_page_id")
+      .notNull()
+      .references(() => sourcePages.id, { onDelete: "restrict" }),
+    verificationStatus: verificationStatusEnum("verification_status")
+      .notNull()
+      .default("unverified"),
+    sourcePriority: integer("source_priority").notNull().default(100),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    validFrom: timestamp("valid_from", { withTimezone: true }),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("vehicle_model_specifications_model_id_idx").on(table.modelId),
+    index("vehicle_model_specifications_field_key_idx").on(table.fieldKey),
+    index("vehicle_model_specifications_numeric_value_idx").on(
+      table.numericValue,
+    ),
+    index("vehicle_model_specifications_verification_status_idx").on(
+      table.verificationStatus,
+    ),
+    index("vehicle_model_specifications_observed_at_idx").on(table.observedAt),
+    uniqueIndex("vehicle_model_specifications_model_field_source_unique").on(
+      table.modelId,
+      table.fieldKey,
+      table.sourcePageId,
+    ),
+    check(
+      "vehicle_model_specifications_single_value_check",
+      sql`(
+        (${table.valueType} = 'number' AND ${table.numericValue} IS NOT NULL AND ${table.textValue} IS NULL AND ${table.booleanValue} IS NULL) OR
+        (${table.valueType} = 'text' AND ${table.textValue} IS NOT NULL AND ${table.numericValue} IS NULL AND ${table.booleanValue} IS NULL) OR
+        (${table.valueType} = 'boolean' AND ${table.booleanValue} IS NOT NULL AND ${table.numericValue} IS NULL AND ${table.textValue} IS NULL)
+      )`,
+    ),
+  ],
+);
+
 export const vehicleSpecifications = pgTable(
   "vehicle_specifications",
   {
@@ -286,9 +344,12 @@ export const vehicleOffers = pgTable(
   "vehicle_offers",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    variantId: uuid("variant_id")
-      .notNull()
-      .references(() => vehicleVariants.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => vehicleVariants.id, {
+      onDelete: "restrict",
+    }),
+    modelId: uuid("model_id").references(() => vehicleModels.id, {
+      onDelete: "restrict",
+    }),
     sourcePageId: uuid("source_page_id")
       .notNull()
       .references(() => sourcePages.id, { onDelete: "restrict" }),
@@ -332,9 +393,17 @@ export const vehicleOffers = pgTable(
       .on(table.externalOfferId)
       .where(sql`${table.externalOfferId} is not null`),
     index("vehicle_offers_variant_id_idx").on(table.variantId),
+    index("vehicle_offers_model_id_idx").on(table.modelId),
     index("vehicle_offers_is_current_idx").on(table.isCurrent),
     index("vehicle_offers_availability_status_idx").on(table.availabilityStatus),
     index("vehicle_offers_current_price_idx").on(table.currentPrice),
+    check(
+      "vehicle_offers_exactly_one_subject_check",
+      sql`(
+        (${table.variantId} IS NOT NULL AND ${table.modelId} IS NULL) OR
+        (${table.variantId} IS NULL AND ${table.modelId} IS NOT NULL)
+      )`,
+    ),
   ],
 );
 

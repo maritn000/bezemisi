@@ -7,6 +7,7 @@ import {
   getVehicleDetails,
   searchVehicles,
 } from "@/lib/catalogue/catalogue-service";
+import { searchModelsByPublishedFacts } from "@/lib/catalogue/repositories/catalogue-repository";
 import { understandQuery, understandQueryFromMessages } from "@/lib/catalogue/query-understanding";
 import type {
   CatalogueVariantSummary,
@@ -221,6 +222,37 @@ export async function retrieveVehicleContext(
         limit: 10,
       });
 
+      const publishedModels = await searchModelsByPublishedFacts({
+        minimumWltpRange: intent.minimumWltpRange,
+        maximumPrice: intent.maximumPrice,
+        limit: 10,
+      });
+
+      const modelFacts: VerifiedFact[] = publishedModels.flatMap((model) =>
+        model.specifications.map((spec) => ({
+          field:
+            spec.fieldKey === "published_model_max_wltp_range_km"
+              ? "published_model_max_wltp_range_km"
+              : spec.fieldKey,
+          value: spec.value,
+          unit: spec.unit,
+          vehicleId: model.id,
+          sourceId: spec.source.id,
+          confidence: "verified" as const,
+        })),
+      );
+
+      const modelSources: VerifiedSource[] = publishedModels.flatMap((model) =>
+        model.specifications.map((spec) => ({
+          id: spec.source.id,
+          title: spec.source.title,
+          url: spec.source.url,
+          checkedAt: spec.source.checkedAt,
+          sourceType: spec.source.sourceType,
+          vehicleId: model.id,
+        })),
+      );
+
       const sortedVariants =
         intent.sortByField && result.variants.length > 1
           ? [...result.variants].sort((left, right) => {
@@ -237,13 +269,22 @@ export async function retrieveVehicleContext(
           : result.variants;
 
       const context = buildVariantContext(sortedVariants);
+      const sourcesById = new Map<string, VerifiedSource>();
+      for (const source of [...context.sources, ...modelSources]) {
+        sourcesById.set(source.id, source);
+      }
+
       return {
-        facts: context.facts,
-        sources: context.sources,
+        facts: [...context.facts, ...modelFacts],
+        sources: [...sourcesById.values()],
         commercialConditions: [],
-        hasVerifiedContext: context.hasVerifiedContext,
+        hasVerifiedContext: context.hasVerifiedContext || modelFacts.length > 0,
         missingFields: context.missingFields,
         conflicts: context.conflicts,
+        ambiguityMessage:
+          modelFacts.length > 0 && sortedVariants.length === 0
+            ? "U některých modelů jsou k dispozici pouze modelové marketingové hodnoty (např. dojezd až X km). Konkrétní dojezd závisí na variantě."
+            : undefined,
       };
     }
 
