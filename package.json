@@ -20,7 +20,9 @@
     "catalogue:discover": "tsx -r tsconfig-paths/register scripts/catalogue/discover.ts",
     "catalogue:ingest": "tsx -r tsconfig-paths/register scripts/catalogue/ingest.ts",
     "catalogue:validate": "tsx -r tsconfig-paths/register scripts/catalogue/validate.ts",
-    "catalogue:report": "tsx -r tsconfig-paths/register scripts/catalogue/report.ts"
+    "catalogue:report": "tsx -r tsconfig-paths/register scripts/catalogue/report.ts",
+    "deployment:verify": "tsx -r tsconfig-paths/register scripts/deployment-verify.ts",
+    "test:deployment": "tsx --require ./scripts/mock-server-only.cjs --test scripts/deployment-verify.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.20",
