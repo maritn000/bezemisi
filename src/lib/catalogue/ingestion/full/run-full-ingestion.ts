@@ -35,6 +35,7 @@ import {
 import {
   recordIngestionIssue,
   seedSpecToFact,
+  deactivateInvalidPresentedModels,
   upsertBrandRecord,
   upsertCommercialConditionRecord,
   upsertModelRecord,
@@ -296,7 +297,10 @@ export async function runFullCatalogueIngestion(
     const discoveredUrls = discoverCatalogueUrls(catalogueCrawl.html);
     const modelPageUrls = discoveredUrls.filter((url) =>
       /\/elektromobily\/[^/]+\/[^/]+$/.test(url),
-    );
+    ).filter((url) => {
+      const brandSlug = url.replace(/\/$/, "").split("/").at(-2);
+      return Boolean(brandSlug && !brandSlug.startsWith("data-"));
+    });
     const brandPageUrls = discoveredUrls.filter(
       (url) =>
         /\/elektromobily\/[^/]+$/.test(url) && !url.endsWith("/elektromobily"),
@@ -423,6 +427,11 @@ export async function runFullCatalogueIngestion(
             message: "Katalogový obrázek modelu nebyl nalezen.",
           });
         }
+      }
+
+      const deactivatedInvalidModels = await deactivateInvalidPresentedModels(db);
+      if (deactivatedInvalidModels > 0) {
+        summary.warningsCount += deactivatedInvalidModels;
       }
     }
 

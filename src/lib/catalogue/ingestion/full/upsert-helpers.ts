@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, like, or, sql } from "drizzle-orm";
 
 import { createDb } from "@/db/create-client";
 import {
@@ -321,6 +321,36 @@ export async function upsertModelRecord(
     })
     .returning();
   return created!;
+}
+
+export async function deactivateInvalidPresentedModels(db: Db) {
+  const rows = await db
+    .select({
+      modelId: vehicleModels.id,
+      modelName: vehicleModels.name,
+      brandSlug: vehicleBrands.slug,
+    })
+    .from(vehicleModels)
+    .innerJoin(vehicleBrands, eq(vehicleModels.brandId, vehicleBrands.id))
+    .where(
+      and(
+        eq(vehicleModels.isPresentedByBezemisi, true),
+        or(
+          like(vehicleModels.name, "%${%"),
+          like(vehicleBrands.slug, "data-%"),
+          sql`length(${vehicleModels.name}) > 120`,
+        ),
+      ),
+    );
+
+  for (const row of rows) {
+    await db
+      .update(vehicleModels)
+      .set({ isPresentedByBezemisi: false, updatedAt: new Date() })
+      .where(eq(vehicleModels.id, row.modelId));
+  }
+
+  return rows.length;
 }
 
 export async function upsertVariantRecord(
