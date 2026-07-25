@@ -466,11 +466,24 @@ export function buildPriceLookupDiagnostic(
 }
 
 export function formatPriceSummaryForModels(prices: ResolvedPrice[]) {
-  if (prices.length === 0) {
+  return formatPriceSummaryLines(
+    prices.map((price) => `- ${formatResolvedPriceForUser(price)}`),
+  );
+}
+
+export function formatPriceSummaryLines(lines: string[]) {
+  if (lines.length === 0) {
     return "U žádného modelu z výběru nemám ověřenou cenu.";
   }
 
-  const lines = prices.map((price) => `- ${formatResolvedPriceForUser(price)}`);
+  if (lines.length === 1) {
+    return [
+      lines[0]!.replace(/^-\s*/, ""),
+      "",
+      "U konkrétní nabídky se cena může změnit; rozhodující je vždy aktuální potvrzení Bez emisí.",
+    ].join("\n");
+  }
+
   return [
     "U vozů z předchozího výběru mám tyto ověřené ceny:",
     ...lines,

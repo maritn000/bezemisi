@@ -1,7 +1,10 @@
 import "server-only";
 
 import { understandQuery } from "@/lib/catalogue/query-understanding";
-import type { QueryIntent } from "@/lib/catalogue/types";
+import {
+  queryIntentSchema,
+  type QueryIntent,
+} from "@/lib/catalogue/types";
 
 export type CatalogueConversationContext = {
   priorSearch?: NonNullable<QueryIntent["priorSearch"]>;
@@ -73,8 +76,17 @@ function parseCatalogueContextPart(
         })
         .filter((entry): entry is { brand: string; model: string } => Boolean(entry))
     : undefined;
+  const priorSearch =
+    record.priorSearch && typeof record.priorSearch === "object"
+      ? parsePriorSearch(record.priorSearch as Record<string, unknown>)
+      : undefined;
 
-  if (!modelIds?.length && !variantIds?.length && !targetModels?.length) {
+  if (
+    !modelIds?.length &&
+    !variantIds?.length &&
+    !targetModels?.length &&
+    !priorSearch
+  ) {
     return null;
   }
 
@@ -82,7 +94,18 @@ function parseCatalogueContextPart(
     modelIds,
     variantIds,
     targetModels,
+    priorSearch,
   };
+}
+
+function parsePriorSearch(
+  record: Record<string, unknown>,
+): NonNullable<QueryIntent["priorSearch"]> | undefined {
+  const parsed = queryIntentSchema.safeParse({
+    intent: "offer_search",
+    priorSearch: record,
+  });
+  return parsed.success ? parsed.data.priorSearch : undefined;
 }
 
 function extractStructuredContextFromMessages(
@@ -202,6 +225,7 @@ export function buildCatalogueContextPart(context: CatalogueConversationContext)
       modelIds: context.modelIds ?? [],
       variantIds: context.variantIds ?? [],
       targetModels: context.targetModels ?? [],
+      priorSearch: context.priorSearch ?? null,
     },
   } as const;
 }

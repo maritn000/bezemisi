@@ -4,9 +4,11 @@ import test from "node:test";
 import { normalizeVehicleTitle } from "@/lib/catalogue/source-title";
 import {
   containsInternalIdentifier,
+  sanitizeStreamedTextFragments,
   stripInternalIdentifiers,
 } from "@/lib/chat/output-safeguard";
 import {
+  buildFallbackModelsFromOffers,
   buildGroundedChatContext,
   deduplicateVerifiedSources,
   type RetrievalResult,
@@ -42,6 +44,17 @@ test("stripInternalIdentifiers removes internal source tags", () => {
   assert.equal(output, "Cena je 500 000 Kč");
 });
 
+test("stream safeguard preserves spaces and removes UUID split across fragments", () => {
+  const output = sanitizeStreamedTextFragments([
+    "Cena modelu ",
+    "začíná na ",
+    "1 133 000 Kč [2bb67414-5aef-",
+    "4c84-b1c0-6f92c051c040].",
+  ]);
+
+  assert.equal(output, "Cena modelu začíná na 1 133 000 Kč.");
+});
+
 test("deduplicateVerifiedSources removes duplicate URLs and titles", () => {
   const deduped = deduplicateVerifiedSources([
     {
@@ -65,6 +78,45 @@ test("deduplicateVerifiedSources removes duplicate URLs and titles", () => {
   ]);
 
   assert.equal(deduped.length, 2);
+});
+
+test("current offers remain answerable when an exact catalogue slug is unavailable", () => {
+  const models = buildFallbackModelsFromOffers(
+    [
+      {
+        id: "offer-kona",
+        title: "Hyundai KONA Electric",
+        currentPrice: 424_999,
+        listPrice: null,
+        currency: "CZK",
+        availabilityStatus: "available",
+        offerType: "stock_inventory",
+        condition: "used",
+        mileageKm: 12_500,
+        observedAt: "2026-07-24",
+        offerUrl: "https://example.com/kona-offer",
+        isCurrent: true,
+        source: {
+          id: "source-kona",
+          title: "Hyundai KONA Electric",
+          url: "https://example.com/kona-offer",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_offer_page",
+          checkedAt: "2026-07-24",
+          modelId: "model-kona",
+        },
+        brandName: "Hyundai",
+        modelName: "KONA Electric",
+        variantName: "Modelová nabídka",
+      },
+    ],
+    "hyundai",
+    "kona",
+  );
+
+  assert.equal(models.length, 1);
+  assert.equal(models[0]?.name, "KONA Electric");
+  assert.equal(models[0]?.currentOffers[0]?.currentPrice, 424_999);
 });
 
 test("buildGroundedChatContext does not expose UUIDs in prompt content", () => {
