@@ -24,7 +24,11 @@ import type {
   QueryIntent,
   SourceReference,
 } from "@/lib/catalogue/types";
-import { resolveConversationContext } from "@/lib/chat/conversation-context";
+import {
+  extractCatalogueContextFromRetrieval,
+  resolveConversationContext,
+  type CatalogueConversationContext,
+} from "@/lib/chat/conversation-context";
 
 import { CHAT_ERRORS } from "./errors";
 
@@ -57,6 +61,7 @@ export type RetrievalResult = {
   missingFields?: string[];
   conflicts?: string[];
   ambiguityMessage?: string;
+  catalogueContext?: CatalogueConversationContext | null;
 };
 
 function emptyRetrieval(): RetrievalResult {
@@ -229,23 +234,32 @@ async function resolveModelsForPriorSearch(
     modelMap.set(model.id, model);
   }
 
+  const slugPairs = [
+    ...new Set(
+      variantSearch.variants.map(
+        (variant) => `${variant.brandSlug}/${variant.modelSlug}`,
+      ),
+    ),
+  ].map((key) => {
+    const [brand, model] = key.split("/");
+    return { brand: brand!, model: model! };
+  });
+
+  const variantModels = await getModelSummariesBySlugs(slugPairs);
+  for (const model of variantModels) {
+    modelMap.set(model.id, model);
+  }
+
   const variantsByModel = new Map<string, CatalogueVariantSummary[]>();
   for (const variant of variantSearch.variants) {
-    const details = await getVehicleDetails({
-      brand: variant.brandSlug,
-      model: variant.modelSlug,
-    });
-    const modelSummary = (await getModelSummariesBySlugs([
-      { brand: variant.brandSlug, model: variant.modelSlug },
-    ]))[0];
+    const modelSummary = variantModels.find(
+      (model) =>
+        model.brandSlug === variant.brandSlug && model.slug === variant.modelSlug,
+    );
     if (!modelSummary) continue;
-    modelMap.set(modelSummary.id, modelSummary);
     const bucket = variantsByModel.get(modelSummary.id) ?? [];
     bucket.push(variant);
     variantsByModel.set(modelSummary.id, bucket);
-    if (details.variants.length > bucket.length) {
-      variantsByModel.set(modelSummary.id, details.variants);
-    }
   }
 
   return {
@@ -384,6 +398,33 @@ export async function retrieveVehicleContext(
           : result.variants;
 
       const context = buildVariantContext(sortedVariants);
+      const catalogueContext = extractCatalogueContextFromRetrieval({
+        modelIds: [
+          ...publishedModels.map((model) => model.id),
+          ...priceContext.facts
+            .map((fact) => fact.modelId)
+            .filter((id): id is string => Boolean(id)),
+        ],
+        variantIds: sortedVariants.map((variant) => variant.id),
+        targetModels: publishedModels.map((model) => ({
+          brand: model.brandSlug,
+          model: model.slug,
+        })),
+        priorSearch: {
+          intent: "vehicle_search",
+          brand: enrichedIntent.brand,
+          model: enrichedIntent.model,
+          minimumWltpRange: enrichedIntent.minimumWltpRange,
+          minimumRealRange: enrichedIntent.minimumRealRange,
+          minimumBootCapacity: enrichedIntent.minimumBootCapacity,
+          minimumSeats: enrichedIntent.minimumSeats,
+          maximumPrice: enrichedIntent.maximumPrice,
+          drivetrain: enrichedIntent.drivetrain,
+          availability: enrichedIntent.availability,
+          requiredFeature: enrichedIntent.requiredFeature,
+          sortByField: enrichedIntent.sortByField,
+        },
+      });
       const sourcesById = new Map<string, VerifiedSource>();
       for (const source of [
         ...context.sources,
@@ -416,6 +457,7 @@ export async function retrieveVehicleContext(
           modelFacts.length > 0 && sortedVariants.length === 0
             ? "U některých modelů jsou k dispozici pouze modelové marketingové hodnoty (např. dojezd až X km). Konkrétní dojezd závisí na variantě."
             : undefined,
+        catalogueContext,
       };
     }
 
@@ -439,6 +481,39 @@ export async function retrieveVehicleContext(
       enrichedIntent.intent === "vehicle_detail" ||
       enrichedIntent.intent === "offer_search"
     ) {
+      if (enrichedIntent.modelIds?.length) {
+        const models = await getModelSummariesByIds(enrichedIntent.modelIds);
+        const priceContext = await buildPriceContextForModels(models);
+        if (priceContext.hasVerifiedContext) {
+          return {
+            facts: priceContext.facts,
+            sources: priceContext.sources,
+            commercialConditions: [],
+            hasVerifiedContext: true,
+            catalogueContext: extractCatalogueContextFromRetrieval({
+              modelIds: enrichedIntent.modelIds,
+            }),
+          };
+        }
+      }
+
+      if (enrichedIntent.targetModels?.length) {
+        const models = await getModelSummariesBySlugs(enrichedIntent.targetModels);
+        const priceContext = await buildPriceContextForModels(models);
+        if (priceContext.hasVerifiedContext) {
+          return {
+            facts: priceContext.facts,
+            sources: priceContext.sources,
+            commercialConditions: [],
+            hasVerifiedContext: true,
+            catalogueContext: extractCatalogueContextFromRetrieval({
+              modelIds: models.map((model) => model.id),
+              targetModels: enrichedIntent.targetModels,
+            }),
+          };
+        }
+      }
+
       if (enrichedIntent.priorSearch) {
         const { models, variantsByModel } = await resolveModelsForPriorSearch(
           enrichedIntent.priorSearch,
@@ -453,32 +528,10 @@ export async function retrieveVehicleContext(
             sources: priceContext.sources,
             commercialConditions: [],
             hasVerifiedContext: true,
-          };
-        }
-      }
-
-      if (enrichedIntent.modelIds?.length) {
-        const models = await getModelSummariesByIds(enrichedIntent.modelIds);
-        const priceContext = await buildPriceContextForModels(models);
-        if (priceContext.hasVerifiedContext) {
-          return {
-            facts: priceContext.facts,
-            sources: priceContext.sources,
-            commercialConditions: [],
-            hasVerifiedContext: true,
-          };
-        }
-      }
-
-      if (enrichedIntent.targetModels?.length) {
-        const models = await getModelSummariesBySlugs(enrichedIntent.targetModels);
-        const priceContext = await buildPriceContextForModels(models);
-        if (priceContext.hasVerifiedContext) {
-          return {
-            facts: priceContext.facts,
-            sources: priceContext.sources,
-            commercialConditions: [],
-            hasVerifiedContext: true,
+            catalogueContext: extractCatalogueContextFromRetrieval({
+              modelIds: models.map((model) => model.id),
+              priorSearch: enrichedIntent.priorSearch,
+            }),
           };
         }
       }
@@ -691,6 +744,7 @@ export function mergeRetrievalResults(
       ...new Set([...(vehicle.conflicts ?? []), ...(commercial.conflicts ?? [])]),
     ],
     ambiguityMessage: vehicle.ambiguityMessage ?? commercial.ambiguityMessage,
+    catalogueContext: vehicle.catalogueContext ?? commercial.catalogueContext,
   };
 }
 
