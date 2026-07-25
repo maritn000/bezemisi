@@ -25,8 +25,10 @@ import {
 } from "@/lib/catalogue/ingestion/crawl/stock-parser";
 import { downloadVehicleImage } from "@/lib/catalogue/ingestion/images/download-images";
 import {
-  loadManifest,
-  saveManifest,
+  loadIngestionManifest,
+  saveIngestionManifest,
+} from "@/lib/catalogue/ingestion/crawl/manifest-store";
+import {
   upsertManifestEntry,
 } from "@/lib/catalogue/ingestion/crawl/manifest";
 import {
@@ -50,7 +52,9 @@ export type FullIngestionOptions = {
 
 export type FullIngestionSummary = {
   runId: string;
+  ingestionRunId: string;
   dryRun: boolean;
+  status: "completed" | "completed_with_warnings" | "failed";
   discovered: {
     catalogueModels: number;
     modelPages: number;
@@ -108,7 +112,9 @@ export async function runFullCatalogueIngestion(
 
   const summary: FullIngestionSummary = {
     runId,
+    ingestionRunId: "dry-run",
     dryRun,
+    status: "completed",
     discovered: {
       catalogueModels: 0,
       modelPages: 0,
@@ -131,8 +137,6 @@ export async function runFullCatalogueIngestion(
     blockedUrls: [],
   };
 
-  const manifest = await loadManifest(runId);
-  const crawlOptions = { runId, manifest, resume };
   const db = dryRun ? null : createDb(getNormalizedDatabaseUrl());
 
   let ingestionRunId = "dry-run";
@@ -146,7 +150,11 @@ export async function runFullCatalogueIngestion(
       })
       .returning();
     ingestionRunId = run!.id;
+    summary.ingestionRunId = ingestionRunId;
   }
+
+  const manifest = await loadIngestionManifest(runId, ingestionRunId);
+  const crawlOptions = { runId, manifest, resume };
 
   const modelRegistry = new Map<
     string,
@@ -658,18 +666,20 @@ export async function runFullCatalogueIngestion(
       }
     }
 
-    await saveManifest(manifest, runId);
+    await saveIngestionManifest(manifest, runId, ingestionRunId);
 
     if (!dryRun && db) {
+      summary.status =
+        summary.errorsCount > 0
+          ? "completed_with_warnings"
+          : summary.warningsCount > 0
+            ? "completed_with_warnings"
+            : "completed";
+
       await db
         .update(catalogueIngestionRuns)
         .set({
-          status:
-            summary.errorsCount > 0
-              ? "completed_with_warnings"
-              : summary.warningsCount > 0
-                ? "completed_with_warnings"
-                : "completed",
+          status: summary.status,
           completedAt: new Date(),
           pagesDiscovered:
             summary.discovered.catalogueModels +
@@ -691,6 +701,7 @@ export async function runFullCatalogueIngestion(
     }
   } catch (error) {
     summary.errorsCount += 1;
+    summary.status = "failed";
     if (!dryRun && db) {
       await db
         .update(catalogueIngestionRuns)
