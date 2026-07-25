@@ -84,7 +84,7 @@ const CATALOGUE_ROOT = `${BEZEMISI_BASE_URL}/elektromobily`;
 const ACTION_ROOT = `${BEZEMISI_BASE_URL}/akcni-nabidky`;
 const LEASING_ROOT = `${BEZEMISI_BASE_URL}/operativni-leasing`;
 const STOCK_ROOT = "https://auto.bezemisi.cz/nabidka-vozu/";
-const STOCK_BATCH_SIZE = 35;
+const STOCK_BATCH_SIZE = 10;
 
 type PersistedIngestionState = {
   summary?: FullIngestionSummary;
@@ -188,6 +188,32 @@ export async function runFullCatalogueIngestion(
 
   if (!dryRun && db) {
     if (resume && ingestionRunId === "dry-run") {
+      const runningRuns = await db
+        .select()
+        .from(catalogueIngestionRuns)
+        .where(eq(catalogueIngestionRuns.status, "running"));
+
+      const staleCutoff = Date.now() - 10 * 60 * 1000;
+      for (const staleRun of runningRuns) {
+        const started = staleRun.startedAt?.getTime() ?? 0;
+        if (started > 0 && started < staleCutoff) {
+          await db
+            .update(catalogueIngestionRuns)
+            .set({
+              status: "completed_with_warnings",
+              completedAt: new Date(),
+              metadata: {
+                ...(typeof staleRun.metadata === "object" && staleRun.metadata
+                  ? staleRun.metadata
+                  : {}),
+                staleRunRecovered: true,
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(catalogueIngestionRuns.id, staleRun.id));
+        }
+      }
+
       const [existingRun] = await db
         .select()
         .from(catalogueIngestionRuns)
@@ -234,6 +260,10 @@ export async function runFullCatalogueIngestion(
       ingestionRunId = run!.id;
     }
     summary.ingestionRunId = ingestionRunId;
+  }
+
+  if (stockOnly) {
+    resumeAtStock = true;
   }
 
   const manifest = await loadIngestionManifest(runId, ingestionRunId);

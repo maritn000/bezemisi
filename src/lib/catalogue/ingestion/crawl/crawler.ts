@@ -50,6 +50,27 @@ export async function crawlUrl(
   parentUrl: string | null = null,
 ): Promise<{ html: string; entry: CrawlManifestEntry }> {
   const existing = options.manifest.entries[url];
+  const cached = await readCachedPage(url);
+  if (cached) {
+    return {
+      html: cached,
+      entry:
+        existing ?? {
+          url,
+          pageType,
+          parentUrl,
+          httpStatus: 200,
+          fetchTimestamp: new Date().toISOString(),
+          contentHash: hashContent(cached),
+          parseStatus: "parsed",
+          imagesFound: 0,
+          factsFound: 0,
+          retryCount: 0,
+          error: null,
+        },
+    };
+  }
+
   if (
     options.resume &&
     existing?.parseStatus === "parsed" &&
@@ -57,9 +78,9 @@ export async function crawlUrl(
     existing.httpStatus >= 200 &&
     existing.httpStatus < 400
   ) {
-    const cached = await readCachedPage(url);
-    if (cached) {
-      return { html: cached, entry: existing };
+    const cachedAfterResume = await readCachedPage(url);
+    if (cachedAfterResume) {
+      return { html: cachedAfterResume, entry: existing };
     }
   }
 
@@ -68,7 +89,10 @@ export async function crawlUrl(
 
   while (retryCount <= MAX_RETRIES) {
     try {
-      const fetched = await fetchPage(url);
+      const fetched = await fetchPage(
+        url,
+        pageType === "stock_detail" ? { skipDelay: true } : undefined,
+      );
       await writeCachedPage(url, fetched.html);
 
       const entry: CrawlManifestEntry = {
