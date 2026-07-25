@@ -8,6 +8,7 @@ import {
   stripInternalIdentifiers,
 } from "@/lib/chat/output-safeguard";
 import {
+  buildFallbackModelsFromOffers,
   buildGroundedChatContext,
   deduplicateVerifiedSources,
   type RetrievalResult,
@@ -77,6 +78,45 @@ test("deduplicateVerifiedSources removes duplicate URLs and titles", () => {
   ]);
 
   assert.equal(deduped.length, 2);
+});
+
+test("current offers remain answerable when an exact catalogue slug is unavailable", () => {
+  const models = buildFallbackModelsFromOffers(
+    [
+      {
+        id: "offer-kona",
+        title: "Hyundai KONA Electric",
+        currentPrice: 424_999,
+        listPrice: null,
+        currency: "CZK",
+        availabilityStatus: "available",
+        offerType: "stock_inventory",
+        condition: "used",
+        mileageKm: 12_500,
+        observedAt: "2026-07-24",
+        offerUrl: "https://example.com/kona-offer",
+        isCurrent: true,
+        source: {
+          id: "source-kona",
+          title: "Hyundai KONA Electric",
+          url: "https://example.com/kona-offer",
+          publisher: "Bez emisí",
+          sourceType: "bezemisi_offer_page",
+          checkedAt: "2026-07-24",
+          modelId: "model-kona",
+        },
+        brandName: "Hyundai",
+        modelName: "KONA Electric",
+        variantName: "Modelová nabídka",
+      },
+    ],
+    "hyundai",
+    "kona",
+  );
+
+  assert.equal(models.length, 1);
+  assert.equal(models[0]?.name, "KONA Electric");
+  assert.equal(models[0]?.currentOffers[0]?.currentPrice, 424_999);
 });
 
 test("buildGroundedChatContext does not expose UUIDs in prompt content", () => {

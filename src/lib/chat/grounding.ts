@@ -266,6 +266,51 @@ async function buildPriceContextForModels(
   };
 }
 
+export function buildFallbackModelsFromOffers(
+  offers: Awaited<ReturnType<typeof getCurrentOffersTool>>,
+  fallbackBrandSlug?: string,
+  fallbackModelSlug?: string,
+): Awaited<ReturnType<typeof getModelSummariesByIds>> {
+  const grouped = new Map<
+    string,
+    {
+      id: string;
+      brandName: string;
+      modelName: string;
+      offers: typeof offers;
+    }
+  >();
+
+  for (const offer of offers) {
+    const key = `${offer.brandName}/${offer.modelName}`.toLowerCase();
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.offers.push(offer);
+      continue;
+    }
+
+    grouped.set(key, {
+      id: offer.source.modelId ?? offer.source.variantId ?? key,
+      brandName: offer.brandName,
+      modelName: offer.modelName,
+      offers: [offer],
+    });
+  }
+
+  return [...grouped.values()].map((entry) => ({
+    id: entry.id,
+    name: entry.modelName,
+    slug: fallbackModelSlug ?? entry.modelName.toLowerCase().replace(/\s+/g, "-"),
+    brandName: entry.brandName,
+    brandSlug:
+      fallbackBrandSlug ?? entry.brandName.toLowerCase().replace(/\s+/g, "-"),
+    category: null,
+    mainImagePath: null,
+    specifications: [],
+    currentOffers: entry.offers,
+  }));
+}
+
 async function resolveModelsForPriorSearch(
   priorSearch: NonNullable<QueryIntent["priorSearch"]>,
 ) {
@@ -713,10 +758,21 @@ export async function retrieveVehicleContext(
           limit: 10,
         });
 
+        const priceModels =
+          modelSummaries.length > 0
+            ? modelSummaries
+            : buildFallbackModelsFromOffers(
+                offers,
+                enrichedIntent.brand,
+                enrichedIntent.model,
+              );
         const priceContext = await buildPriceContextForModels(
-          modelSummaries,
+          priceModels,
           new Map(
-            modelSummaries.map((model) => [model.id, details.variants]),
+            priceModels.map((model) => [
+              model.id,
+              modelSummaries.length > 0 ? details.variants : [],
+            ]),
           ),
         );
 
