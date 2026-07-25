@@ -96,7 +96,7 @@ export function understandQuery(query: string): QueryIntent {
     const brandModel = models[0]?.split(/\s+/) ?? [];
     return queryIntentSchema.parse({
       intent: "offer_search",
-      brand: brandModel[0],
+      brand: brandModel[0] ? normalize(brandModel[0]) : undefined,
       model: brandModel.slice(1).join("-").toLowerCase().replace(/\s+/g, "-"),
       maximumPrice: extractNumber(query, /do\s+(\d[\d\s]*)\s*(tis|kč|kc)/i),
     });
@@ -172,7 +172,7 @@ export function understandQuery(query: string): QueryIntent {
     const parts = models[0]!.split(/\s+/);
     return queryIntentSchema.parse({
       intent: "vehicle_detail",
-      brand: parts[0],
+      brand: parts[0] ? normalize(parts[0]) : undefined,
       model: parts.slice(1).join("-").toLowerCase(),
     });
   }

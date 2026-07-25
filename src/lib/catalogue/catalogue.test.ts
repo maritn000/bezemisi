@@ -48,6 +48,13 @@ test("Czech query understanding for comparison", () => {
   assert.ok(intent.models && intent.models.length >= 2);
 });
 
+test("Czech query understanding normalizes brand slug for price search", () => {
+  const intent = understandQuery("Kolik stojí Hyundai Inster?");
+  assert.equal(intent.intent, "offer_search");
+  assert.equal(intent.brand, "hyundai");
+  assert.equal(intent.model, "inster");
+});
+
 test("Czech query understanding for purchase process", () => {
   const intent = understandQuery("Jak probíhá nákup přes Bez emisí?");
   assert.equal(intent.intent, "commercial_question");
