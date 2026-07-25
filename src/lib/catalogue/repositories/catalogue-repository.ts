@@ -23,7 +23,12 @@ import {
   vehicleVariants,
 } from "@/db/schema";
 
-import { OFFER_STALE_DAYS } from "../constants";
+import { OFFER_STALE_DAYS, WLTP_RANGE_FIELD_KEY } from "../constants";
+import {
+  canonicalizeRangeFieldKey,
+  isUsableVerifiedRangeValue,
+  parseRangeNumericValue,
+} from "../range-field-keys";
 import type {
   CatalogueOffer,
   CatalogueVariantSummary,
@@ -59,6 +64,8 @@ function mapSpecification(
   spec: typeof vehicleSpecifications.$inferSelect,
   source: SourceReference,
 ): VerifiedSpecification {
+  const canonicalFieldKey =
+    canonicalizeRangeFieldKey(spec.fieldKey) ?? spec.fieldKey;
   const value =
     spec.valueType === "number"
       ? Number(spec.numericValue)
@@ -67,12 +74,81 @@ function mapSpecification(
         : String(spec.textValue ?? "");
 
   return {
-    fieldKey: spec.fieldKey,
+    fieldKey: canonicalFieldKey,
     value,
     unit: spec.unit,
     verificationStatus: spec.verificationStatus,
     source,
   };
+}
+
+function selectPreferredSpecifications(
+  rows: Array<{
+    spec: typeof vehicleSpecifications.$inferSelect;
+    page: typeof sourcePages.$inferSelect;
+  }>,
+  variantId: string,
+): VerifiedSpecification[] {
+  const grouped = new Map<string, typeof rows>();
+
+  for (const row of rows) {
+    const canonicalKey =
+      canonicalizeRangeFieldKey(row.spec.fieldKey) ?? row.spec.fieldKey;
+    const key = `${canonicalKey}`;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(row);
+    grouped.set(key, bucket);
+  }
+
+  const selected: VerifiedSpecification[] = [];
+
+  for (const [fieldKey, bucket] of grouped) {
+    const verified = bucket.filter((row) =>
+      CONFIDENT_STATUSES.includes(
+        row.spec.verificationStatus as (typeof CONFIDENT_STATUSES)[number],
+      ),
+    );
+
+    const candidates = verified.length > 0 ? verified : bucket;
+    const preferred = [...candidates].sort((left, right) => {
+      const leftPriority = left.spec.sourcePriority ?? 100;
+      const rightPriority = right.spec.sourcePriority ?? 100;
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+
+      const leftObserved = new Date(left.spec.observedAt ?? 0).getTime();
+      const rightObserved = new Date(right.spec.observedAt ?? 0).getTime();
+      if (leftObserved !== rightObserved) {
+        return rightObserved - leftObserved;
+      }
+
+      const leftNumeric = parseRangeNumericValue(left.spec) ?? 0;
+      const rightNumeric = parseRangeNumericValue(right.spec) ?? 0;
+      return rightNumeric - leftNumeric;
+    })[0];
+
+    if (!preferred) continue;
+
+    const mapped = mapSpecification(
+      {
+        ...preferred.spec,
+        fieldKey,
+      },
+      mapSourceReference(preferred.page, { variantId }),
+    );
+
+    if (
+      canonicalizeRangeFieldKey(fieldKey) &&
+      !isUsableVerifiedRangeValue(fieldKey, mapped.value)
+    ) {
+      continue;
+    }
+
+    selected.push(mapped);
+  }
+
+  return selected;
 }
 
 function mapOffer(
@@ -189,19 +265,15 @@ async function buildVariantSummaries(
 
   return rows.map(({ variant, model, brand }) => {
     const variantSpecs = specs.filter((row) => row.spec.variantId === variant.id);
-    const verifiedSpecs = variantSpecs.filter((row) =>
-      CONFIDENT_STATUSES.includes(
-        row.spec.verificationStatus as (typeof CONFIDENT_STATUSES)[number],
-      ),
-    );
     const conflictingFields = [
       ...new Set(
         variantSpecs
           .filter((row) => row.spec.verificationStatus === "conflicting")
-          .map((row) => row.spec.fieldKey),
+          .map((row) => canonicalizeRangeFieldKey(row.spec.fieldKey) ?? row.spec.fieldKey),
       ),
     ];
-    const presentFields = new Set(verifiedSpecs.map((row) => row.spec.fieldKey));
+    const specifications = selectPreferredSpecifications(variantSpecs, variant.id);
+    const presentFields = new Set(specifications.map((spec) => spec.fieldKey));
     const missingFields = [
       "wltp_range_km",
       "battery_capacity_usable_kwh",
@@ -227,12 +299,7 @@ async function buildVariantSummaries(
       trimName: variant.trimName,
       batteryVariant: variant.batteryVariant,
       drivetrain: variant.drivetrain,
-      specifications: verifiedSpecs.map((row) =>
-        mapSpecification(
-          row.spec,
-          mapSourceReference(row.page, { variantId: variant.id }),
-        ),
-      ),
+      specifications,
       currentOffers: variantOffers,
       missingFields,
       conflictingFields,
@@ -292,8 +359,8 @@ export async function searchVariants(filters: {
       variant.specifications.map((spec) => [spec.fieldKey, spec.value]),
     );
 
-    if (filters.minimumWltpRange) {
-      const value = specMap.get("wltp_range_km");
+    if (filters.minimumWltpRange !== undefined) {
+      const value = specMap.get(WLTP_RANGE_FIELD_KEY);
       if (typeof value !== "number" || value < filters.minimumWltpRange) {
         return false;
       }
@@ -369,7 +436,8 @@ export async function findVariantsByIdentifier(identifier: string) {
           lower(concat(${vehicleBrands.slug}, '/', ${vehicleModels.slug})) = ${normalized}
         )`,
       ),
-    );
+    )
+    .orderBy(asc(vehicleVariants.slug));
 
   return buildVariantSummaries(rows);
 }

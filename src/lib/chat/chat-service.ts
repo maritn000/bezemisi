@@ -116,7 +116,14 @@ export async function handleChatRequest(parsedBody: ChatRequest) {
   }
 
   const [vehicleContext, commercialContext] = await Promise.all([
-    retrieveVehicleContext(query),
+    retrieveVehicleContext(query, {
+      messages: parsedBody.messages.map((message) => ({
+        role: message.role,
+        parts: message.parts.map((part) => ({
+          text: "text" in part && typeof part.text === "string" ? part.text : "",
+        })),
+      })),
+    }),
     retrieveCommercialContext(query),
   ]);
   const retrieval = mergeRetrievalResults(vehicleContext, commercialContext);

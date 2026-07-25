@@ -17,6 +17,7 @@ async function main() {
         generatedAt: new Date().toISOString(),
         stats,
         validation,
+        rangeMetrics: validation.rangeMetrics,
       },
       null,
       2,
